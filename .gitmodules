@@ -1,0 +1,4 @@
+[submodule "tells_environment_dynamics"]
+	path = tells_environment_dynamics
+	url = https://github.com/cameronpm1/tells_environment_dynamics.git
+	branch = main
