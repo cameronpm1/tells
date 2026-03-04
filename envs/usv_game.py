@@ -1,5 +1,6 @@
 import copy
 import scipy
+import random
 import numpy as np
 from typing import Dict, Optional, Any, Tuple
 
@@ -50,20 +51,21 @@ class USVGame():
         trick from https://en.wikipedia.org/wiki/Discretization#cite_note-2
         '''
         block = np.zeros((9,9))
-        block[0:6,0:6] = boats['chaser1'].get_local_attr('A')
-        block[0:6,6:9] = boats['chaser1'].get_local_attr('B')
+        block[0:6,0:6] = boats['chaser0'].get_local_attr('A')
+        block[0:6,6:9] = boats['chaser0'].get_local_attr('B')
         block_d = scipy.linalg.expm(block*self.timestep*self.horizon)
 
         A_d = block_d[0:6,0:6]
         B_d = block_d[0:6,6:9]
 
+        self.chaser_control_range = np.array(config['boats']['chaser0']['mpc']['control_range'])
         self.chaser_mpc = boatMPC(
             initial_state = np.zeros((6,)),
             state_matrix = A_d,
             control_matrix = B_d,
-            control_bounds = np.array(config['boats']['chaser1']['mpc']['control_range']),
+            control_bounds = self.chaser_control_range,
             dt = self.timestep*self.horizon,
-            N = config['boats']['chaser1']['mpc']['N'],
+            N = config['boats']['chaser0']['mpc']['N'],
         )
 
         block = np.zeros((9,9))
@@ -75,17 +77,19 @@ class USVGame():
         A_d = block_d[0:6,0:6]
         B_d = block_d[0:6,6:9]
 
+        self.target_control_range = np.array(config['boats']['target']['mpc']['control_range'])
         self.target_mpc = boatMPC(
             initial_state = np.zeros((6,)),
             state_matrix = A_d,
             control_matrix = B_d,
-            control_bounds = np.array(config['boats']['target']['mpc']['control_range']),
+            control_bounds = self.target_control_range,
             dt = self.timestep*self.horizon,
             N = config['boats']['target']['mpc']['N'],
         )
 
         init_function_name = config['sim']['starting_config'] + '_init'
-        self.init_function = getattr(self, init_function_name)
+        self.init_type = init_function_name
+        self.init_function = getattr(self, self.init_type)
 
         self.reset(init_params=config['sim']['init_params'],state_data=None)
 
@@ -113,8 +117,8 @@ class USVGame():
         for key in self.boats.keys():
             self.trajectories[key] = []
             for i in range(self.min_obs):
-                self.trajectories[key].append(self.boats[key].get_local_attr('pos'))
-            
+                #self.trajectories[key].append(self.boats[key].get_local_attr('pos'))
+                self.trajectories[key].append(self.boats[key].get_local_attr('state'))
 
     def forward_step(
             self,
@@ -125,13 +129,15 @@ class USVGame():
 
         for key in self.boats.keys():
             self.boats[key].forward_step()
-            self.trajectories[key].append(self.boats[key].get_local_attr('pos'))
+            #self.trajectories[key].append(self.boats[key].get_local_attr('pos'))
+            self.trajectories[key].append(self.boats[key].get_local_attr('state'))
 
 
     def circle_init(
             self,
             min_dist: float,
             max_dist: float,
+            wall_dist: float,
     ):
         '''
         initialize chaser boats in larger circle around target
@@ -142,6 +148,8 @@ class USVGame():
             minimum distance chaser boat can be initialized from target
         max_dist:float
             maximum distance chaser boat can be initialized from target
+        wall_dist:float
+            distance target boat can be initialized from wall
         '''
         n_boats = len(self.boats) - 1
 
@@ -154,7 +162,10 @@ class USVGame():
         temp_state_data['position'] = target_start
         self.boats['target'].reset(temp_state_data)
 
-        for key in self.boats.keys():
+        idxs = list(range(len(self.boats) - 1))  
+        random.shuffle(idxs)
+
+        for i,key in enumerate(self.boats.keys()):
             if 'chaser' in key:
                 temp_state_data = {
                     'velocity' : np.array([0.0, 0.0]),
@@ -162,7 +173,7 @@ class USVGame():
                     'angular_velocity' : np.array([0.0])
                 }
 
-                idx = int(key[-1]) - 1 #chaser number
+                idx = idxs[i] #chaser number
                 spacing = np.pi*2/n_boats
                 angle = self.rand_normal(idx*spacing,(idx+1)*spacing,(1,))[0]
                 rad = self.rand_normal(min_dist,max_dist,(1,))[0]
@@ -170,7 +181,65 @@ class USVGame():
                 temp_state_data['position'] = chaser_start + target_start
                 self.boats[key].reset(temp_state_data)
 
-        self.target_goal = target_start
+        self.target_start = target_start
+
+    def tag_team_init(
+            self,
+            min_dist: float,
+            max_dist: float,
+            wall_dist: float,
+    ):
+        '''
+        initialize chaser boats in larger circle around target
+        
+        input
+        -----
+        min_dist:float
+            minimum distance chaser boat can be initialized from target
+        max_dist:float
+            maximum distance chaser boat can be initialized from target
+        wall_dist:float
+            distance target boat can be initialized from wall
+        '''
+        n_boats = len(self.boats) - 1
+
+        temp_state_data = {
+            'velocity' : np.array([0.0, 0.0]),
+            'heading' : np.array([0.0]),
+            'angular_velocity' : np.array([0.0])
+        }
+        target_start = self.rand_normal(max_dist,self.board_size-max_dist,(2,))
+        target_hdg = self.rand_normal(-np.pi,np.pi,(2,))[0]
+        temp_state_data['position'] = target_start
+        temp_state_data['heading'] = target_hdg
+        self.boats['target'].reset(temp_state_data)
+
+        team_vec_angle = self.rand_normal(-np.pi,np.pi,(1,))[0]
+        team_start_vec = np.array([np.cos(team_vec_angle), np.sin(team_vec_angle)])
+        team_dist = self.rand_normal(min_dist,max_dist,(2,))
+        offset_transform = np.array([[0, -1], [1, 0]])
+
+        for i,key in enumerate(self.boats.keys()):
+            if 'chaser' in key:
+                temp_state_data = {
+                    'velocity' : np.array([0.0, 0.0]),
+                    'angular_velocity' : np.array([0.0])
+                }
+
+                if i % 2 == 0:
+                    start = target_start + team_start_vec * team_dist[0]
+                    start = start + int(i/2) * np.matmul(offset_transform, team_start_vec) * 30
+                    hdg = team_vec_angle - np.pi
+                else:
+                    start = target_start - team_start_vec * team_dist[1]
+                    start = start + int(i/2) * np.matmul(offset_transform, team_start_vec) * 30
+                    hdg = team_vec_angle 
+
+                temp_state_data['position'] = start
+                temp_state_data['heading'] = hdg
+                self.boats[key].reset(temp_state_data)
+
+        self.target_start = target_start
 
     def furthest_from_centroid(
             self,
@@ -244,7 +313,7 @@ class USVGame():
     def target_boat_PFA(
             self,
             chaser_prox: float = 400.0,
-            vector_scale: float = 100.0,
+            vector_scale: float = 1000.0,
             attract_scale: float = 1.0,
             repel_scale: float = 5.0,
             buffer: float = 40,
@@ -274,23 +343,39 @@ class USVGame():
 
         vec = np.zeros((2,))
         target_pos = self.boats['target'].get_local_attr('pos')
+        target_hdg = self.boats['target'].get_local_attr('hdg')
 
         goal = self.furthest_from_centroid()
         goal_vec = goal - target_pos
         norm_goal_vec = goal_vec/np.linalg.norm(goal_vec) 
-        vec = vec + (norm_goal_vec * attract_scale)
+        #vec = vec + (norm_goal_vec * attract_scale) #attractive force
+        heading_vec = np.array([np.sin(target_hdg),np.cos(target_hdg)])
+
+        blocked = False
 
         for key in self.boats.keys():
             if 'chaser' in key:
                 repel_vec = target_pos - self.boats[key].get_local_attr('pos')
-                norm_repel_vec = repel_vec/np.linalg.norm(repel_vec)
+                repel_mag = np.linalg.norm(repel_vec)
+                #if repel_mag < 100 and np.degrees(np.arccos(np.dot(repel_vec/repel_mag,heading_vec))) < 25:
+                #    blocked = False
+                #    break
+                norm_repel_vec = repel_vec/repel_mag
                 weight = self.chaser_boat_potential_function(distance=np.linalg.norm(repel_vec)/chaser_prox) * repel_scale
                 vec = vec + (norm_repel_vec * weight)
+        
+        #if blocked:
+        #    vector_scale = 0.1
+        if np.linalg.norm(vec) > 0:
+            scaled_vec = vec/np.linalg.norm(vec) * vector_scale
+        else:
+            scaled_vec = np.zeros((2,))
+            
+        target_point = self.boats['target'].get_local_attr('pos') + scaled_vec
+        #target_point = target_pos + scaled_vec
 
-        scaled_vec = vec/np.linalg.norm(vec) * vector_scale
-        target_point = target_pos + scaled_vec
-
-        return np.clip(target_point,[buffer,buffer],[self.board_size-buffer,self.board_size-buffer])
+        #return np.clip(target_point,[buffer,buffer],[self.board_size-buffer,self.board_size-buffer])
+        return target_point
 
     def chaser_boat_potential_function(
             self,
@@ -316,6 +401,38 @@ class USVGame():
         '''
 
         return scale * 1 / (1 + np.exp((10*distance)-5)) #+ ( 1 / (1 + np.exp(distance)) )
+    
+    def set_thrust_control(
+            self,
+            name: str,
+            control: list[float],
+    ) -> list[float]:
+        '''
+        sets control for boat given goal point
+
+        input
+        -----
+        name:str
+            name of boat from boat list to compute control of
+        list[float]:goal_point
+            goal point for target boat
+
+        output
+        ------
+        list[float]
+            control output for target boat
+        '''
+            
+        control = np.clip(control,-1,1)
+
+        if 'target' in name:
+            control = np.multiply(control,self.target_control_range)
+        else:
+            control = np.multiply(control,self.chaser_control_range)
+
+        self.boats[name].set_ctrl(control)
+
+        return control
     
     def set_position_control(
             self,
@@ -406,6 +523,7 @@ class USVGame():
 
         points = []
         lines = []
+        colors = []
 
         for i,boat in enumerate(self.boats.keys()):
             pos = self.boats[boat].get_local_attr('pos')
@@ -414,10 +532,15 @@ class USVGame():
             for j in range(len(boat_points)):
                 points.append(transformed_vertices[j])
                 lines.append((boat_lines[j][0]+(5*i),boat_lines[j][1]+(5*i)))
+                if 'target' in boat:
+                    colors.append('b')
+                else:
+                    colors.append('k')
 
         plot_data = {}
         plot_data['lines'] = lines
         plot_data['points'] = points
+        plot_data['colors'] = colors
 
         return plot_data
 

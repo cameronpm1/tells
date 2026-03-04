@@ -16,7 +16,8 @@ def load_config(filepath):
             print(exc)
 
 def make_usv_game(
-        config: dict
+        config: dict,
+        seed: int = 0,
 ):
     '''
     initialize usv_game class
@@ -48,14 +49,16 @@ def make_usv_game(
     game = USVGame(
         config = config,
         boats = boats,
-        seed = config['seed']
+        seed = seed
     )
 
     return game
 
 def make_usv_env(
         config: dict,
+        seed: int = 0,
         wrap: bool = True,
+        eval: bool = False,
 ):
     '''
     initialize usv_gym_env
@@ -66,17 +69,26 @@ def make_usv_env(
         config dictionary
     wrap:bool
         if True wraps env in gymnasium flattenObservation wrapper
+    eval:bool
+        pass to environment, tells it whether it is in evaluation mode or not
     '''
 
-    usv_game = make_usv_game(config)
+    usv_game = make_usv_game(
+        config=config,
+        seed = seed,
+    )
 
     env_kwargs = config['env']
     env_kwargs['sim'] = usv_game
     env_kwargs['reset_kwargs'] = config['sim']['init_params']
-    env = USVGymEnv(**env_kwargs)
+    env_kwargs['seed'] = seed
+    env_kwargs['eval'] = eval
+    env = USVGymEnv(**env_kwargs,)
 
     if wrap:
-        env = FilterObservation(env,filter_keys=list(config['boats'].keys()))
+        keys = list(config['boats'].keys())
+        keys.append('goals')
+        env = FilterObservation(env,filter_keys=keys)
         env = FlattenObservation(env)
     
     return env

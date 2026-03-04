@@ -1,0 +1,20 @@
+lr: 0.000001
+seed: 1
+if_cuda: True
+gamma: 0.5
+log_dir: 'logs/belief/'
+label: 'test33'
+train_batch: 256
+val_batch: 256
+test_batch: 256
+num_workers: 15
+num_gpus: 1
+model_name: 'NN'
+input_channels: 18
+output_channels: 12
+data_dir: 'data/'
+data_name: 'circle_dist_noise'
+lr_schedule: []
+epochs: 3000
+
+#50x50 output, larger model, median loc, new data

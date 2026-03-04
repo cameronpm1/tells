@@ -1,0 +1,111 @@
+seed: &seed 5 # set experiment seed
+timestep: &timestep 0.5  #20
+horizon: &horizon 10 #10
+friction: &friction 0.3
+min_obs: 2 #number of steps to run in sim eppisode before deploying policy
+logdir: /home/cameron/tells/logs/test44
+notes: no wall limit, sac single boat get target, tag team train1
+
+alg:
+  type : sac
+  lr : 0.0001 
+  nenvs : 100
+  nenvs_eval: 3
+  pi : [512, 512, 512]
+  vf : [512, 512, 512]
+  timesteps : 5e6
+
+env:
+  max_episode_length: 100
+  ctrl_scale: 30
+  horizon: 15
+  distance_tol: 300
+  seed: *seed
+
+sim:
+  n: 3 #number of pursuit boats
+  starting_config: tag_team #starting configuration of pursuit boats [circle, tag_team]
+  init_params:
+    min_dist: 300 #100 #minimum distance of pursuit boats from target boat when starting
+    max_dist: 400 #200 #maximum distance of pursuit boats from target boat when starting
+    wall_dist: 400
+
+boats:
+
+  target:
+    inertial_data:
+      J_b: 3e4
+      mass: 4000
+      length: 10
+      friction: *friction
+    thrust_range: [-75, 75]
+    torque_range: [-75, 75]
+    initial_state_data:
+      position: [0.0, 0.0]
+      velocity: [0.0, 0.0]
+      heading: [0.0]
+      angular_velocity: [0.0]
+    mpc:
+      N: 3
+      control_range: [100, 0, 3.0]
+
+  chaser0:
+    inertial_data:
+      J_b: 3e4
+      mass: 4000
+      length: 10
+      friction: *friction
+    initial_state_data:
+      position: [0.0, 0.0]
+      velocity: [0.0, 0.0]
+      heading: [0.0]
+      angular_velocity: [0.0]
+    mpc:
+      N: 3
+      control_range: [200, 0, 10.0]
+
+  chaser1:
+    inertial_data:
+      J_b: 3e4
+      mass: 4000
+      length: 10
+      friction: *friction
+    initial_state_data:
+      position: [0.0, 0.0]
+      velocity: [0.0, 0.0]
+      heading: [0.0]
+      angular_velocity: [0.0]
+    mpc:
+      N: 3
+      control_range: [200, 0, 9.0]
+
+  chaser2:
+    inertial_data:
+      J_b: 3e4
+      mass: 4000
+      length: 10
+      friction: *friction
+    initial_state_data:
+      position: [0.0, 0.0]
+      velocity: [0.0, 0.0]
+      heading: [0.0]
+      angular_velocity: [0.0]
+    mpc:
+      N: 3
+      control_range: [200, 0, 9.0]
+
+  chaser3:
+    inertial_data:
+      J_b: 3e4
+      mass: 4000
+      length: 10
+      friction: *friction
+    initial_state_data:
+      position: [0.0, 0.0]
+      velocity: [0.0, 0.0]
+      heading: [0.0]
+      angular_velocity: [0.0]
+    mpc:
+      N: 3
+      control_range: [200, 0, 9.0]
+
