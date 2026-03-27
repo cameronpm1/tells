@@ -112,7 +112,7 @@ class PredatorPreyEnv(gymnasium.Env):
             diff = adversary.state.p_pos - agent.state.p_pos
             dist = np.linalg.norm(diff) + 1e-6
 
-            force += diff / dist #dist**2
+            force += diff / dist**2
 
         norm = np.linalg.norm(force)
 
@@ -120,7 +120,7 @@ class PredatorPreyEnv(gymnasium.Env):
             force = force / norm
 
         # choose dominant direction
-        if np.linalg.norm(force) < 1.0:
+        if norm < 0.5:
             return 0  # no-op
 
         if abs(force[0]) > abs(force[1]):

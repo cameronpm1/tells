@@ -1,8 +1,8 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/test15
-notes: single policy, large batch
+logdir: /home/cameron/tells/logs/marl/test16
+notes: restart, new adversary behavior
 
 alg:
   type : sac
