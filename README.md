@@ -60,6 +60,10 @@ python tensorboard --logdir logs/marl/test12/
 - Computes opposing forces to guide target movement  
 - Objective, agents must corral the target toward a predefined landmark  
 
+### Episode Cutoffs
+- Max episode steps reached
+- Target or agent location outside of GRID_SIZE (defined in env file)
+
 ### Environment Composition
 - `PredatorPreyScenario` is wrapped inside:
   ```
