@@ -1,3 +1,4 @@
+import os
 import ray
 import numpy as np
 
@@ -48,12 +49,13 @@ def eval(
         exit()
 
     for i in range(n_runs):
-        eval_single_episode(env,cfg,checkpoint_dir,algo,i)
+        eval_single_episode(env,cfg,algo,checkpoint_dir,i)
 
 def eval_single_episode(
         env,
         cfg:dict,
-        checkpoint,
+        algo,
+        save_dir:str = '',
         idx:int=0,
     ):
     '''
@@ -65,8 +67,10 @@ def eval_single_episode(
         environement
     cfg:dict
         config dictionary
-    checkpoint
+    algo
         ray checkpoint loaded
+    save_dir:str
+        directory to save videos in
     idx:int
         index for saving video
     '''
@@ -111,9 +115,11 @@ def eval_single_episode(
 
         images.append(env.render_rgb())
 
-    save_dir = 'test'+str(idx)+'.mp4'
-    print('generating video in ' + save_dir)
-    save_argb_video(images,save_dir)
+    save_dir = os.path.join(save_dir,'videos')
+    mkdir(save_dir)
+    save_file = os.path.join(save_dir,str(idx)+'.mp4')
+    print('generating video in ' + save_file)
+    save_argb_video(images,save_file)
 
     print("\n==== EVAL RESULTS ====")
     print(f"Reward: {np.mean(episode_rewards):.3f}")
