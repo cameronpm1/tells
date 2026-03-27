@@ -2,6 +2,7 @@ import os
 import cv2
 import yaml
 import shutil
+import imageio
 
 def mkdir(folder):
     if os.path.exists(folder):
@@ -27,3 +28,8 @@ def save_argb_video(images, output_path, fps=30):
         out.write(frame)
 
     out.release()
+
+def save_rgb_gif(images, output_path, fps=10):
+
+    duration = 1 / fps  # seconds per frame
+    imageio.mimsave(output_path, images, duration=duration)

@@ -8,8 +8,8 @@ from ray.rllib.algorithms.ppo import PPOConfig
 
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.make_env import make_predator_prey_env
-from util.util import mkdir, load_config, save_argb_video
 from learn.marl.train import make_ray_config, marl_policy_mapping_fn
+from util.util import mkdir, load_config, save_argb_video, save_rgb_gif
 
 
 def eval(
@@ -48,8 +48,17 @@ def eval(
         print('No model directory provided...')
         exit()
 
+    save_dir = os.path.join(checkpoint_dir,'videos')
+    mkdir(save_dir)
+
     for i in range(n_runs):
-        eval_single_episode(env,cfg,algo,checkpoint_dir,i)
+        eval_single_episode(
+            env=env,
+            cfg=cfg,
+            algo=algo,
+            save_dir=save_dir,
+            idx=i
+        )
 
 def eval_single_episode(
         env,
@@ -115,12 +124,10 @@ def eval_single_episode(
 
         images.append(env.render_rgb())
 
-    save_dir = os.path.join(save_dir,'videos')
-    mkdir(save_dir)
-    save_file = os.path.join(save_dir,str(idx)+'.mp4')
+    save_file = str(os.path.join(save_dir,str(idx)+'.gif'))
     print('generating video in ' + save_file)
-    save_argb_video(images,save_file)
+    save_rgb_gif(images,save_file)
 
     print("\n==== EVAL RESULTS ====")
-    print(f"Reward: {np.mean(episode_rewards):.3f}")
-    print(f"Length: {np.mean(episode_lengths):.2f}")
+    print(f"Reward: {episode_rewards[-1]}")
+    print(f"Length: {episode_lengths[-1]}")

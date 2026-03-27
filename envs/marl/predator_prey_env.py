@@ -348,7 +348,8 @@ class PredatorPreyScenario(BaseScenario):
 
         for other in world.agents:
             if other is agent:
-                obs.append(other.state.p_pos)
+                continue
+                #obs.append(other.state.p_pos)
             obs.append(other.state.p_pos - agent.state.p_pos)
 
         return np.concatenate(obs)
