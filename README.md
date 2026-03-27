@@ -30,6 +30,14 @@ python run.py --command marl_eval --config confs/predator_prey/3a_game.yaml --mo
 
 ---
 
+### Tensorboard 
+```bash
+python tensorboard --logdir logs/marl/test12/
+```
+- Shows tensorboard log files for specified directory 
+
+---
+
 ## Important Class Structures
 
 ### Environment Framework
