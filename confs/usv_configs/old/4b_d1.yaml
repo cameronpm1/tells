@@ -1,22 +1,24 @@
-seed: &seed 7 # set experiment seed
+seed: &seed 5 # set experiment seed
 timestep: &timestep 0.1  #20
 horizon: &horizon 10 #10
 friction: &friction 0.05
-min_obs: 5 #number of steps to run in sim eppisode before deploying policy
-logdir: test1
-notes: position no noise schedule
+min_obs: 10 #number of steps to run in sim eppisode before deploying policy
+logdir: /home/cameron/tells/logs/test21
+notes: no wall limit, boats get closer to target
 
 alg:
+  type : sac
   lr : 0.0001 
-  nenvs : 12
-  pi : [512, 512]
-  vf : [512, 512]
-  timesteps : 15e6
+  nenvs : 10
+  nenvs_eval: 3
+  pi : [512, 512, 512]
+  vf : [512, 512, 512]
+  timesteps : 20e6
 
 env:
-  max_episode_length: 2048
+  max_episode_length: 1024
   ctrl_scale: 30
-  distance_tol: 500
+  distance_tol: 300
   seed: *seed
 
 sim:
@@ -25,6 +27,7 @@ sim:
   init_params:
     min_dist: 100 #100 #minimum distance of pursuit boats from target boat when starting
     max_dist: 200 #200 #maximum distance of pursuit boats from target boat when starting
+    wall_dist: 400
 
 boats:
 
@@ -43,7 +46,7 @@ boats:
       angular_velocity: [0.0]
     mpc:
       N: 3
-      control_range: [700, 0, 5.0]
+      control_range: [200, 0, 3.0]
 
   chaser0:
     inertial_data:
@@ -58,7 +61,7 @@ boats:
       angular_velocity: [0.0]
     mpc:
       N: 3
-      control_range: [200, 0, 2.0]
+      control_range: [700, 0, 5.0]
 
   chaser1:
     inertial_data:
@@ -73,7 +76,7 @@ boats:
       angular_velocity: [0.0]
     mpc:
       N: 3
-      control_range: [200, 0, 2.0]
+      control_range: [700, 0, 5.0]
 
   chaser2:
     inertial_data:
@@ -88,7 +91,7 @@ boats:
       angular_velocity: [0.0]
     mpc:
       N: 3
-      control_range: [200, 0, 2.0]
+      control_range: [700, 0, 5.0]
 
   chaser3:
     inertial_data:
@@ -103,5 +106,5 @@ boats:
       angular_velocity: [0.0]
     mpc:
       N: 3
-      control_range: [200, 0, 2.0]
+      control_range: [700, 0, 5.0]
 

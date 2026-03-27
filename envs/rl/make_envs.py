@@ -2,8 +2,8 @@ import yaml
 import numpy
 from gymnasium.wrappers import FlattenObservation, FilterObservation
 
-from envs.usv_game import USVGame
-from envs.usv_gym_env import USVGymEnv
+from envs.rl.usv_game import USVGame
+from envs.rl.usv_gym_env import USVGymEnv
 from tells_environment_dynamics.sim.boat import Boat
 from tells_environment_dynamics.sim.boat_dynamics import boatDynamics
 

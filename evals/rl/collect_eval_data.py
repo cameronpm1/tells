@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 from stable_baselines3 import SAC
 
-from envs.make_envs import make_usv_env
+from envs.rl.make_envs import make_usv_env
 from tells_environment_dynamics.test import *
 
 def mkdir(folder):

@@ -5,7 +5,7 @@ from typing import Optional
 from gymnasium import spaces
 from collections import OrderedDict
 
-from envs.usv_game import USVGame
+from envs.rl.usv_game import USVGame
 
 class USVGymEnv(gymnasium.Env):
 

@@ -13,9 +13,9 @@ from stable_baselines3.common.type_aliases import TensorDict
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.vec_env.vec_monitor import VecMonitor
 
-from envs.make_envs import make_usv_env
-from learn.custom_callbacks import VideoCallback
-from learn.subproc_vec_env_no_daemon import SubprocVecEnvNoDaemon
+from envs.rl.make_envs import make_usv_env
+from learn.rl.custom_callbacks import VideoCallback
+from learn.rl.subproc_vec_env_no_daemon import SubprocVecEnvNoDaemon
 
 def mkdir(folder):
     if os.path.exists(folder):

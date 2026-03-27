@@ -4,34 +4,9 @@ import numpy as np
 
 from stable_baselines3 import SAC
 
-from envs.make_envs import make_usv_env
+from envs.rl.make_envs import make_usv_env
 from tells_environment_dynamics.test import *
-
-def mkdir(folder):
-    if os.path.exists(folder):
-        shutil.rmtree(folder)
-    os.makedirs(folder)
-
-def load_config(filepath):
-    with open(filepath, 'r') as stream:
-        try:
-            trainer_params = yaml.safe_load(stream)
-            return trainer_params
-        except yaml.YAMLError as exc:
-            print(exc)
-
-def save_argb_video(images, output_path, fps=30):
-    # Convert ARGB to BGR (dropping alpha and converting to OpenCV's color order)
-
-    height, width, _ = images[0].shape
-    print(images[0].shape)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # or 'X264' for H.264
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-
-    for frame in images:
-        out.write(frame)
-
-    out.release()
+from util.util import mkdir, load_config, save_argb_video
 
 def eval(
         config_dir:str,

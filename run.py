@@ -1,7 +1,7 @@
+import os
+import ray
 import torch
 import argparse
-
-
 
 if __name__ == "__main__":
 
@@ -16,14 +16,14 @@ if __name__ == "__main__":
 
     if args.config is None:
         print('ERROR: No config file provided')
-    elif 'rl_train' in args.command:
+    elif args.command == 'rl_train':
 
         torch.set_num_threads(9)
         from learn.rl.train import train
 
         print('Training RL model with config:', args.config)
         train(args.config)
-    elif 'rl_eval' in args.command:
+    elif args.command == 'rl_eval':
 
         if args.model_dir is None:
             print('ERROR: No model directory provided for evaluation')
@@ -56,6 +56,45 @@ if __name__ == "__main__":
             print('Saving data to:', save_dir)
 
             collect_data(args.config, args.model_dir, save_dir, n_runs=args.runs, n_workers=args.n_workers)
+
+    elif 'marl_train' in args.command:
+
+        
+        import warnings
+        os.environ["XDG_RUNTIME_DIR"] = "/tmp"
+        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
+
+        from learn.marl.train import train
+
+        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
+                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
+                              'excludes': ['.git/',]
+                              })
+
+        print('Training marl policies with config:', args.config)
+        train(args.config)
+
+    elif 'marl_eval' in args.command:
+
+        
+        import warnings
+        os.environ["XDG_RUNTIME_DIR"] = "/tmp"
+        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
+
+        from evals.marl.eval import eval
+
+        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
+                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
+                              'excludes': ['.git/',]
+                              })
+
+        print('Evaluating RL model with config:', args.config)
+        print('Loading model from:', args.model_dir)
+        eval(args.config,args.model_dir,args.runs)
 
     elif 'belief_train' in args.command:
 
