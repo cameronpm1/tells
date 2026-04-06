@@ -7,6 +7,7 @@ import torch
 import shutil
 import random
 import logging
+import pickle
 import numpy as np
 from torch import nn
 from omegaconf import DictConfig, OmegaConf
@@ -34,10 +35,56 @@ from envs.marl.make_env import make_predator_prey_env
 
 #logger = getlogger(__name__)
 
+def _load_checkpoint_iteration(checkpoint_dir: str) -> int | None:
+    state_path = os.path.join(checkpoint_dir, 'algorithm_state.pkl')
+    if not os.path.exists(state_path):
+        return None
+
+    try:
+        with open(state_path, 'rb') as f:
+            state = pickle.load(f)
+    except Exception:
+        return None
+
+    training_iteration = state.get('training_iteration')
+    if training_iteration is None:
+        return None
+
+    return int(training_iteration)
+
+def _find_latest_checkpoint(logdir: str) -> tuple[str | None, int]:
+    latest_dir = None
+    latest_iter = -1
+
+    logdir = os.path.abspath(logdir)
+
+    if not os.path.exists(logdir):
+        return None, latest_iter
+
+    for entry in os.scandir(logdir):
+        if not entry.is_dir():
+            continue
+
+        training_iteration = _load_checkpoint_iteration(entry.path)
+        if training_iteration is None:
+            continue
+
+        if training_iteration > latest_iter:
+            latest_iter = training_iteration
+            latest_dir = entry.path
+
+    return latest_dir, latest_iter
+
+def _save_checkpoint(algo, checkpoint_dir: str):
+    if os.path.exists(checkpoint_dir):
+        shutil.rmtree(checkpoint_dir)
+    algo.save(checkpoint_dir=checkpoint_dir)
+
 def train(config_path: str):
 
     cfg = load_config(config_path)
-    logdir = cfg['logdir']
+    logdir = os.path.abspath(cfg['logdir'])
+    cfg['logdir'] = logdir
     if not os.path.exists(logdir):
         print('Save directory not found, creating path ...')
         #logger.info("Save directory not found, creating path ...")
@@ -54,18 +101,38 @@ def train(config_path: str):
 
     algo_config = make_ray_config(cfg)
 
-    algo_build = algo_config.build_algo(logger_creator=logger_creator)  
+    algo_build = algo_config.build_algo(logger_creator=logger_creator)
+
+    resume_dir, resume_iter = _find_latest_checkpoint(logdir)
+    start_iter = 0
+    if resume_dir is not None:
+        print(f'Resuming from checkpoint: {resume_dir}')
+        algo_build.restore(resume_dir)
+        start_iter = max(resume_iter, 0)
+        print(f'Restored training iteration: {start_iter}')
 
     #train 15,000 iterations
-    for i in range(int(cfg['alg']['timesteps'])): 
-        result = algo_build.train()
-        if i % 500 == 0:# and i != 0:
-            save_dir = logdir+'/checkpoint'+str(i)
-            algo_build.save(checkpoint_dir=save_dir)
-            print(pretty_print(result))
+    total_iters = int(cfg['alg']['timesteps'])
+    checkpoint_freq = int(cfg['alg'].get('checkpoint_freq', 500))
 
-    save_dir = logdir+'/final'
-    algo_build.save(checkpoint_dir=save_dir)
+    try:
+        for i in range(start_iter, total_iters):
+            result = algo_build.train()
+            current_iter = i + 1
+
+            if current_iter % checkpoint_freq == 0:
+                save_dir = os.path.join(logdir, 'checkpoint' + str(current_iter))
+                _save_checkpoint(algo_build, save_dir)
+                _save_checkpoint(algo_build, os.path.join(logdir, 'checkpoint_latest'))
+                print(pretty_print(result))
+    except KeyboardInterrupt:
+        interrupt_dir = os.path.join(logdir, 'checkpoint_latest')
+        print(f'\nTraining interrupted. Saving latest checkpoint to: {interrupt_dir}')
+        _save_checkpoint(algo_build, interrupt_dir)
+        return
+
+    save_dir = os.path.join(logdir, 'final')
+    _save_checkpoint(algo_build, save_dir)
 
 
 def make_ray_config(
@@ -164,7 +231,7 @@ def make_ray_config(
                         num_envs_per_env_runner=cfg['alg']['cpu_envs'], #60
                         num_cpus_per_env_runner=1
                         )
-            .resources(num_gpus=1)
+            .resources(num_gpus=cfg['alg'].get('num_gpus', 0))
             .multi_agent(policy_mapping_fn=policy_mapping_fn,
                             policies_to_train=policy_training_fn,
                             policies=policy_info)

@@ -1,7 +1,7 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/test16
+logdir: logs/marl/test16
 notes: restart, new adversary behavior
 
 alg:
@@ -13,6 +13,7 @@ alg:
   target_ent: 0.1
   batch: 256
   batch_size: 256
+  num_gpus: 0
   pi : [512, 512, 512]
   vf : [512, 512, 512]
   timesteps : 15000
