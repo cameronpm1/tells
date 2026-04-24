@@ -54,6 +54,7 @@ def train(config_path: str):
 
     algo_config = make_ray_config(cfg)
 
+<<<<<<< HEAD
     algo_build = algo_config.build_algo(logger_creator=logger_creator)  
 
     #train 15,000 iterations
