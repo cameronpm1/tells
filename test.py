@@ -1,3 +1,4 @@
+import cv2
 import scipy
 import gurobipy as gp
 
@@ -40,7 +41,7 @@ boat_lines = np.array([
 ])
 
 def boat_move():
-    steps = 600
+    steps = 20
     boat = make_boat('boat1')
 
     mass = boat.get_local_attr('mass')
@@ -56,7 +57,7 @@ def boat_move():
         N = 3,
     )
 
-    goal_state = np.array([-14.52975249,  13.74359096, 0.0, 0.0, 0.0, 0.0]) 
+    goal_state = np.array([-30,  0.0, 0.0, 0.0, 0.0, 0.0]) 
 
     plot_data = {}
     plot_data['lines'] = boat_lines
@@ -147,11 +148,27 @@ def test_usv_env():
     plt.ioff()
     plt.show()
 
+def gen_belief_img():
+
+    datapoint = np.load('/home/cameron/tells/data/circle_obs/2/step_4.npz', allow_pickle=True)
+    data_labels = datapoint.files
+
+    data = datapoint['target_true'] 
+    label = np.zeros((100,100))
+
+    for i in range(len(data_labels) - 1):
+        idx = next((j for j,label in enumerate(data_labels) if str(i) in label), -1)
+        loc = (datapoint[data_labels[idx]][0:2] + np.array([0.5,0.5]))*100
+        label[np.clip(int(loc[1]),0,99),np.clip(int(loc[0]),0,99)] = 1
+
+    grayscale_image = cv2.convertScaleAbs(label, alpha=255.0)
+    cv2.imwrite("output_grayscale.png", grayscale_image)
+
 if __name__ == "__main__":
     #test_boat_dynamics()
     #model = gp.Model()
     #boat_move()
 
-    
+    gen_belief_img()
     #test_usv_game()
-    test_usv_env()
+    #test_usv_env()

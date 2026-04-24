@@ -71,7 +71,10 @@ if __name__ == "__main__":
         ray.init(runtime_env={'working_dir': '/home/cameron/tells',
                               'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
                               'excludes': ['.git/',]
-                              })
+                              },
+                 _temp_dir="/nvme0/ray_tmp",
+                 _system_config={
+                 "object_spilling_config": '{"type":"filesystem","params":{"directory_path":"/nvme0/ray_spill"}}'})
 
         print('Training marl policies with config:', args.config)
         train(args.config)
@@ -90,7 +93,8 @@ if __name__ == "__main__":
         ray.init(runtime_env={'working_dir': '/home/cameron/tells',
                               'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
                               'excludes': ['.git/',]
-                              })
+                              } ) #,
+                # _temp_dir="/nvme1/ray_tmp")
 
         print('Evaluating RL model with config:', args.config)
         print('Loading model from:', args.model_dir)

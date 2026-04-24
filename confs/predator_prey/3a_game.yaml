@@ -1,32 +1,40 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/test16
-notes: restart, new adversary behavior
+logdir: /home/cameron/tells/logs/marl/test59
+notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 alg:
   type : sac
   lr : 0.0001 
   gamma: 0.99
-  nenvs : 10
-  cpu_envs: 40
+  nenvs : 2
+  cpu_envs: 5
   target_ent: 0.1
   batch: 256
   batch_size: 256
-  pi : [512, 512, 512]
-  vf : [512, 512, 512]
-  timesteps : 15000
+  buffer_size: 1000000
+  learning_starts: 100000
+  pi : [512, 512] # #[512,512,512] #[256, 256] #
+  vf : [512, 512] # #[512,512,512] #[256, 256] #
+  cl:
+    ts_start: 500000
+    ts_end: 2500000
+    val_start: 0.0
+    val_end: 1.0
+  timesteps : 100000
 
 env:
   scenario: 3_agent_predator_prey
-  max_episode_length: 500
+  max_episode_length: 400
   agent_list: ['target', 'agent0', 'agent1', 'agent2']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
   scenario_kwargs:
     base_speed: 1.0
-    speed_ratio: 0.7
+    speed_ratio: 0.3
+    angle_ratio: 1.0
 
 sim:
   n: 3 #number of pursuit agents
 
-policy_list: ['agent0', 'agent1', 'agent2']
+policy_list: ['agent0'] #, 'agent1', 'agent2']
