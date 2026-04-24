@@ -34,6 +34,54 @@ from envs.marl.make_env import make_predator_prey_env
 
 #logger = getlogger(__name__)
 
+<<<<<<< HEAD
+=======
+def _load_checkpoint_iteration(checkpoint_dir: str) -> int | None:
+    state_path = os.path.join(checkpoint_dir, 'algorithm_state.pkl')
+    if not os.path.exists(state_path):
+        return None
+
+    try:
+        with open(state_path, 'rb') as f:
+            state = pickle.load(f)
+    except Exception:
+        return None
+
+    training_iteration = state.get('training_iteration')
+    if training_iteration is None:
+        return None
+
+    return int(training_iteration)
+
+def _find_latest_checkpoint(logdir: str) -> tuple[str | None, int]:
+    latest_dir = None
+    latest_iter = -1
+
+    logdir = os.path.abspath(logdir)
+
+    if not os.path.exists(logdir):
+        return None, latest_iter
+
+    for entry in os.scandir(logdir):
+        if not entry.is_dir():
+            continue
+
+        training_iteration = _load_checkpoint_iteration(entry.path)
+        if training_iteration is None:
+            continue
+
+        if training_iteration > latest_iter:
+            latest_iter = training_iteration
+            latest_dir = entry.path
+
+    return latest_dir, latest_iter
+
+def _save_checkpoint(algo, checkpoint_dir: str):
+    if os.path.exists(checkpoint_dir):
+        shutil.rmtree(checkpoint_dir)
+    algo.save(checkpoint_dir=checkpoint_dir)
+
+>>>>>>> parent of 71330b2 (Implement PPO and introduce a new reward function for better behavior guidance.)
 def train(config_path: str):
 
     cfg = load_config(config_path)
@@ -56,6 +104,17 @@ def train(config_path: str):
 
 <<<<<<< HEAD
     algo_build = algo_config.build_algo(logger_creator=logger_creator)  
+=======
+    algo_build = algo_config.build_algo(logger_creator=logger_creator)
+
+    resume_dir, resume_iter = _find_latest_checkpoint(logdir)
+    start_iter = 0
+    if resume_dir is not None:
+        print(f'Resuming from checkpoint: {resume_dir}')
+        algo_build.restore(resume_dir)
+        start_iter = max(resume_iter, 0)
+        print(f'Restored training iteration: {start_iter}')
+>>>>>>> parent of 71330b2 (Implement PPO and introduce a new reward function for better behavior guidance.)
 
     #train 15,000 iterations
     for i in range(int(cfg['alg']['timesteps'])): 
