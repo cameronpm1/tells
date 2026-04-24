@@ -1,31 +1,94 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
-logdir: logs/marl/test16
-notes: restart, new adversary behavior
+logdir: logs/marl/test33_same_spot_pack_bc_256
+notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 alg:
-  type : sac
-  lr : 0.0001 
+  type : ppo
+  lr : 0.00003
   gamma: 0.99
-  nenvs : 10
-  cpu_envs: 40
+  nenvs : 2
+  cpu_envs: 8
   target_ent: 0.1
-  batch: 256
+  batch: 4096
   batch_size: 256
   num_gpus: 0
-  pi : [512, 512, 512]
-  vf : [512, 512, 512]
-  timesteps : 15000
+  pi : [256, 256, 256]
+  vf : [256, 256, 256]
+  timesteps : 0
+  checkpoint_freq: 5
+  minibatch_size: 512
+  num_epochs: 3
+  lambda: 0.95
+  entropy_coeff: 0.0
+  clip_param: 0.05
+  vf_clip_param: 10.0
+  grad_clip: 0.25
+  pretrain:
+    enabled: true
+    episodes: 900
+    epochs: 28
+    batch_size: 1024
+    lr: 0.0005
+    value_loss_coef: 0.02
+    grad_clip: 1.0
+    eval_runs: 50
 
 env:
   scenario: 3_agent_predator_prey
-  max_episode_length: 500
+  max_episode_length: 400
   agent_list: ['target', 'agent0', 'agent1', 'agent2']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
   scenario_kwargs:
-    base_speed: 1.0
-    speed_ratio: 0.7
+    base_speed: 1.2
+    speed_ratio: 0.35
+    spawn_around_target: true
+    predator_corner_spawn: false
+    predator_same_spawn: true
+    predator_same_spawn_jitter: 0.05
+    target_spawn_extent: 1.25
+    agent_spawn_min_radius: 2.5
+    agent_spawn_max_radius: 4.5
+    goal_spawn_min_radius: 3.0
+    goal_spawn_max_radius: 5.5
+  controller_kwargs:
+    action_threshold: 0.45
+    force_exponent: 2.5
+    boundary_margin: 0.75
+    prey_sensitivity: 1.2
+    prey_avoid_radius: 2.4
+    prey_avoid_gain: 1.5
+  reward_kwargs:
+    distance_scale: 2.0
+    chase_scale: 2.0
+    progress_scale: 16.0
+    approach_scale: 2.5
+    containment_scale: 2.0
+    coverage_scale: 2.0
+    slot_scale: 18.0
+    hold_scale: 20.0
+    success_bonus: 750.0
+    oob_penalty: 3000.0
+    uncontrolled_goal_scale: 12.0
+    touch_penalty_scale: 3.0
+    step_cost: 0.05
+    goal_focus_temp: 1.0
+    surround_radius: 2.4
+    ideal_radius: 2.0
+    radius_tolerance: 0.7
+    hold_goal_radius: 0.9
+    hold_coverage_min: 0.3
+    hold_close_fraction: 0.34
+    hold_ring_min: 0.05
+    success_hold_steps: 8
+    slot_switch_distance: 3.0
+    slot_push_radius: 2.1
+    slot_push_offset: 1.05
+    slot_flank_radius: 1.65
+    slot_goal_backoff: 1.2
+    slot_goal_lateral: 1.25
+    slot_tolerance: 0.85
 
 sim:
   n: 3 #number of pursuit agents
