@@ -1,7 +1,3 @@
 .venv/
 logs/
 data/
-__pycache__/
-*.egg-info/
-uv.lock
-.DS_Store
