@@ -12,6 +12,7 @@ from torch import nn
 from omegaconf import DictConfig, OmegaConf
 from hydra.core.hydra_config import HydraConfig
 
+from ray.tune.logger import NoopLogger
 from ray.tune.logger import pretty_print
 from ray.rllib.utils.test_utils import (
     add_rllib_example_script_args,
@@ -30,6 +31,7 @@ from ray.rllib.utils.metrics import (
 #from logger import getlogger
 from util.util import mkdir, load_config
 from envs.marl.rllib_wrapper import RLLibWrapper
+from learn.marl.callbacks import CurriculumCallback
 from envs.marl.make_env import make_predator_prey_env
 
 #logger = getlogger(__name__)
@@ -119,7 +121,7 @@ def train(config_path: str):
     #train 15,000 iterations
     for i in range(int(cfg['alg']['timesteps'])): 
         result = algo_build.train()
-        if i % 500 == 0:# and i != 0:
+        if i % 1000 == 0:# and i != 0:
             save_dir = logdir+'/checkpoint'+str(i)
             algo_build.save(checkpoint_dir=save_dir)
             print(pretty_print(result))
@@ -180,7 +182,10 @@ def make_ray_config(
     #test_env for getting obs/action space
     test_env = env_maker(None)
     policy_list = cfg['policy_list']
-    policy_mapping_fn = marl_policy_mapping_fn
+    if len(policy_list) == 1:
+        policy_mapping_fn = marl_single_policy_mapping_fn
+    else:
+        policy_mapping_fn = marl_multi_policy_mapping_fn
     policy_training_fn = policy_tracker.policy_training_schedule
 
     batch = None
@@ -236,18 +241,23 @@ def make_ray_config(
                         grad_clip_by='norm',
                         replay_buffer_config={
                             'type': 'MultiAgentReplayBuffer', #'EpisodeReplayBuffer', 
-                            'capacity': 1000000, 
+                            'capacity': cfg['alg']['buffer_size'], 
                             'replay_sequence_length': 1,
+                            'learning_starts':cfg['alg']['learning_starts'],
                             },
                         )
+            #.callbacks(CurriculumCallback)
+            .debugging(log_level="ERROR")
     )
     
     del test_env
 
     return algo_config
 
-def marl_policy_mapping_fn(agent_id, episode, **kwargs):
+def marl_single_policy_mapping_fn(agent_id, episode, **kwargs):
 
     return 'agent0' #for single policy, multiple agents
 
-    #return agent_id
+def marl_multi_policy_mapping_fn(agent_id, episode, **kwargs):
+
+    return agent_id

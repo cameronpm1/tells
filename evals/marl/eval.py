@@ -8,8 +8,8 @@ from ray.rllib.algorithms.ppo import PPOConfig
 
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.make_env import make_predator_prey_env
-from learn.marl.train import make_ray_config, marl_policy_mapping_fn
-from util.util import mkdir, load_config, save_argb_video, save_rgb_gif
+from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
+from learn.marl.train import make_ray_config, marl_single_policy_mapping_fn, marl_multi_policy_mapping_fn
 
 
 def eval(
@@ -96,6 +96,12 @@ def eval_single_episode(
     total_reward = {agent: 0.0 for agent in obs.keys()}
     step_count = 0
 
+    policy_list = cfg['policy_list']
+    if len(policy_list) == 1:
+        policy_mapping_fn = marl_single_policy_mapping_fn
+    else:
+        policy_mapping_fn = marl_multi_policy_mapping_fn
+
     while not done["__all__"]:
 
         actions = {}
@@ -103,7 +109,7 @@ def eval_single_episode(
         for agent_id, agent_obs in obs.items():
             action = algo.compute_single_action(
                 agent_obs,
-                policy_id=marl_policy_mapping_fn(agent_id, 0), 
+                policy_id=policy_mapping_fn(agent_id, 0), 
                 explore=False
             )
             actions[agent_id] = action

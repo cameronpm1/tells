@@ -11,7 +11,7 @@ from mpe2._mpe_utils.scenario import BaseScenario
 from mpe2._mpe_utils.simple_env import SimpleEnv, make_env
 from pettingzoo.utils.conversions import parallel_wrapper_fn
 
-GRID_SIZE = 10
+GRID_SIZE = 3
 
 class PredatorPreyEnv(gymnasium.Env):
 
@@ -45,8 +45,8 @@ class PredatorPreyEnv(gymnasium.Env):
         self, 
         action_dict: dict
     ):
-        self.ts += 1
 
+        self.ts += 1
         action_dict['target'] = self.adversary_action('target')
 
         obs, rewards, terminations, truncations, infos = self.env.step(action_dict)
@@ -120,7 +120,7 @@ class PredatorPreyEnv(gymnasium.Env):
             force = force / norm
 
         # choose dominant direction
-        if norm < 0.5:
+        if norm < 1.5:
             return 0  # no-op
 
         if abs(force[0]) > abs(force[1]):
@@ -144,10 +144,17 @@ class PredatorPreyEnv(gymnasium.Env):
 
         for entity in world.agents:
             x, y = entity.state.p_pos
-            if abs(x) >= threshold or abs(y) >= threshold:
+            if entity.adversary:
+                adj_threshold = GRID_SIZE
+            else:
+                adj_threshold = GRID_SIZE * 2
+            if abs(x) >= adj_threshold or abs(y) >= adj_threshold:
                 return True
 
         return False
+
+    def set_difficulty(self, difficulty):
+        self.env.unwrapped.scenario.angle_ratio = difficulty  #scenario.set_angle_ratio(difficulty)
 
 class ScenarioEnv(SimpleEnv):
 
@@ -171,10 +178,11 @@ class ScenarioEnv(SimpleEnv):
     ):
 
         self.render_mode = render_mode
-        self.cam_scale = GRID_SIZE + 0.15
+        self.cam_scale = GRID_SIZE*2 + 0.15
         self.dot_scale = 0.5
+        self.scenario_kwargs = scenario_kwargs
 
-        scenario = PredatorPreyScenario(**scenario_kwargs)
+        scenario = PredatorPreyScenario(**self.scenario_kwargs)
         world = scenario.make_world()
 
         super().__init__(
@@ -253,12 +261,14 @@ class PredatorPreyScenario(BaseScenario):
         agent_list: list[str],
         base_speed: float = 1.0,
         speed_ratio: float = 0.4,
+        angle_ratio: float = 1.0
     ):
 
         self.agents = agent_list
         self.n = len(agent_list)
         self.base_speed = base_speed
         self.speed_ratio = speed_ratio
+        self.angle_ratio = angle_ratio
 
     def make_world(self):
 
@@ -306,19 +316,30 @@ class PredatorPreyScenario(BaseScenario):
 
     def reset_world(self, world, np_random):
 
+        adv_pos = None
+
         for agent in world.agents:
-            if 'agent' in agent.name:
-                agent.state.p_pos = np_random.uniform(-4, +4, world.dim_p)
-            else:
-                #adversary spawned in smaller area of map
-                agent.state.p_pos = np_random.uniform(-0.5, +0.5, world.dim_p)
+            if agent.adversary:
+                adv_pos = np_random.uniform(-2, +2, world.dim_p)
+                agent.state.p_pos = adv_pos
+
+        for agent in world.agents:
+            if not agent.adversary:
+                theta = np_random.uniform(-np.pi,+np.pi) #*self.angle_ratio, +np.pi*self.angle_ratio)
+                rot_mat = np.array([
+                    [np.cos(theta), -np.sin(theta)],
+                    [np.sin(theta), np.cos(theta)]
+                ])
+
+                offset_vector = rot_mat @ (adv_pos/np.linalg.norm(adv_pos) * np_random.uniform(0.2, 0.4)) #1.0
+                agent.state.p_pos = np.clip(adv_pos + offset_vector, -GRID_SIZE, +GRID_SIZE)
 
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
-
+        
 
         for landmark in world.landmarks:
-            landmark.state.p_pos = np_random.uniform(-2, +2, (world.dim_p,))
+            landmark.state.p_pos = np_random.uniform(-0.1, +0.1, (world.dim_p,))
             #landmark.state.p_pos = np.array([1.0, 0.0])
             landmark.state.p_vel = np.zeros(world.dim_p)
 
@@ -332,9 +353,19 @@ class PredatorPreyScenario(BaseScenario):
 
         dist = np.linalg.norm(adversary.state.p_pos - goal.state.p_pos)
 
-        return ((len(self.agents)-1)*GRID_SIZE)/np.clip(dist,0.1,GRID_SIZE)
-        #return 1/np.clip(dist,0.1,GRID_SIZE)
-        #return np.exp(5/(1+dist))
+        if dist > GRID_SIZE:
+            return 0
+
+        if dist < 0.5:
+            return 1
+        else:
+            return 0
+
+        #return 0.3/np.clip(dist,0.1,GRID_SIZE)#(GRID_SIZE)/np.clip(dist,0.1,GRID_SIZE)
+        #dist = np.linalg.norm(agent.state.p_pos - goal.state.p_pos)
+
+        #return (GRID_SIZE)/np.clip(dist,0.1,GRID_SIZE)
+
 
     def observation(self, agent, world):
 
@@ -345,12 +376,14 @@ class PredatorPreyScenario(BaseScenario):
 
         for landmark in world.landmarks:
             obs.append(landmark.state.p_pos - agent.state.p_pos)
+            #obs.append(landmark.state.p_pos/GRID_SIZE)
 
         for other in world.agents:
             if other is agent:
                 continue
                 #obs.append(other.state.p_pos)
             obs.append(other.state.p_pos - agent.state.p_pos)
+            #obs.append(other.state.p_pos/GRID_SIZE)
 
         return np.concatenate(obs)
 
