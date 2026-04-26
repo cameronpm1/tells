@@ -1,43 +1,37 @@
-seed: &seed 22 # set experiment seed
-timestep: &timestep 0.5  #20
-horizon: &horizon 10 #10
-logdir: logs/marl/test33_same_spot_pack_bc_256
-notes: Predators start co-located at one randomized pack position; predator observations of prey and teammates use sampled Gaussian position uncertainty while prey observations stay exact
+seed: &seed 22
+timestep: &timestep 0.5
+horizon: &horizon 10
+logdir: logs/marl/test34_uncertainty_finetune_gif
+notes: Long-horizon eval config for the uncertainty fine-tuned policy; predator observations of prey and teammates are noisy while prey observations stay exact
 
 alg:
   type : ppo
-  lr : 0.00003
+  lr : 0.00002
   gamma: 0.99
-  nenvs : 2
-  cpu_envs: 8
+  nenvs : 1
+  cpu_envs: 2
   target_ent: 0.1
-  batch: 4096
+  batch: 1024
   batch_size: 256
   num_gpus: 0
   pi : [256, 256, 256]
   vf : [256, 256, 256]
-  timesteps : 0
-  checkpoint_freq: 5
-  minibatch_size: 512
+  timesteps : 8
+  checkpoint_freq: 2
+  minibatch_size: 256
   num_epochs: 3
   lambda: 0.95
   entropy_coeff: 0.0
   clip_param: 0.05
   vf_clip_param: 10.0
   grad_clip: 0.25
+  initial_checkpoint: logs/marl/test33_same_spot_pack_bc_256/checkpoint_best
   pretrain:
-    enabled: true
-    episodes: 900
-    epochs: 28
-    batch_size: 1024
-    lr: 0.0005
-    value_loss_coef: 0.02
-    grad_clip: 1.0
-    eval_runs: 50
+    enabled: false
 
 env:
   scenario: 3_agent_predator_prey
-  max_episode_length: 400
+  max_episode_length: 800
   agent_list: ['target', 'agent0', 'agent1', 'agent2']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
   scenario_kwargs:
@@ -96,6 +90,6 @@ env:
     slot_tolerance: 0.85
 
 sim:
-  n: 3 #number of pursuit agents
+  n: 3
 
 policy_list: ['agent0', 'agent1', 'agent2']

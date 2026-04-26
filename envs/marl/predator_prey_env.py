@@ -575,6 +575,7 @@ class PredatorPreyScenario(BaseScenario):
         agent_spawn_max_radius: float = 3.0,
         goal_spawn_min_radius: float = 1.0,
         goal_spawn_max_radius: float = 3.0,
+        observation_noise_kwargs: Optional[dict] = None,
     ):
 
         self.agents = agent_list
@@ -590,6 +591,69 @@ class PredatorPreyScenario(BaseScenario):
         self.agent_spawn_max_radius = agent_spawn_max_radius
         self.goal_spawn_min_radius = goal_spawn_min_radius
         self.goal_spawn_max_radius = goal_spawn_max_radius
+        self._np_random = np.random.default_rng()
+
+        obs_noise_cfg = {
+            'predator_std_choices': [0.0],
+            'prey_std_choices': [0.0],
+            'predator_noise_clip': None,
+            'prey_noise_clip': None,
+        }
+        if observation_noise_kwargs is not None:
+            obs_noise_cfg.update(observation_noise_kwargs)
+
+        self.predator_std_choices = self._normalize_std_choices(
+            obs_noise_cfg.get('predator_std_choices', [0.0])
+        )
+        self.prey_std_choices = self._normalize_std_choices(
+            obs_noise_cfg.get('prey_std_choices', [0.0])
+        )
+        self.predator_noise_clip = self._normalize_noise_clip(
+            obs_noise_cfg.get('predator_noise_clip')
+        )
+        self.prey_noise_clip = self._normalize_noise_clip(
+            obs_noise_cfg.get('prey_noise_clip')
+        )
+
+    @staticmethod
+    def _normalize_std_choices(std_choices) -> np.ndarray:
+        if std_choices is None:
+            return np.array([0.0], dtype=np.float32)
+        if np.isscalar(std_choices):
+            return np.array([max(float(std_choices), 0.0)], dtype=np.float32)
+
+        values = np.asarray(std_choices, dtype=np.float32).reshape(-1)
+        if values.size == 0:
+            return np.array([0.0], dtype=np.float32)
+
+        return np.clip(values, a_min=0.0, a_max=None)
+
+    @staticmethod
+    def _normalize_noise_clip(noise_clip) -> Optional[float]:
+        if noise_clip is None:
+            return None
+        return max(float(noise_clip), 0.0)
+
+    def _sample_noisy_relative_position(
+        self,
+        relative_position: np.ndarray,
+        std_choices: np.ndarray,
+        noise_clip: Optional[float],
+    ) -> np.ndarray:
+        if std_choices.size == 0:
+            return relative_position.copy()
+
+        # Sample from a small Gaussian mixture so uncertainty varies between
+        # observations instead of behaving like a fixed blur radius.
+        std = float(self._np_random.choice(std_choices))
+        if std <= 0.0:
+            return relative_position.copy()
+
+        noise = self._np_random.normal(0.0, std, size=relative_position.shape)
+        if noise_clip is not None:
+            noise = np.clip(noise, -noise_clip, noise_clip)
+
+        return relative_position + noise
 
     def make_world(self):
 
@@ -636,6 +700,7 @@ class PredatorPreyScenario(BaseScenario):
         return world
 
     def reset_world(self, world, np_random):
+        self._np_random = np_random
         predators = [agent for agent in world.agents if not agent.adversary]
         target = [agent for agent in world.agents if agent.adversary][0]
         goal = world.landmarks[0]
@@ -765,8 +830,6 @@ class PredatorPreyScenario(BaseScenario):
         #return np.exp(5/(1+dist))
 
     def observation(self, agent, world):
-        # ADD NOISE TO OBSERVATIONS OF OTHER AGENTS
-
         obs = []
 
         obs.append(agent.state.p_vel)
@@ -778,8 +841,25 @@ class PredatorPreyScenario(BaseScenario):
         for other in world.agents:
             if other is agent:
                 continue
-                #obs.append(other.state.p_pos)
-            obs.append(other.state.p_pos - agent.state.p_pos)
+
+            relative_position = other.state.p_pos - agent.state.p_pos
+            if agent.adversary:
+                obs.append(relative_position)
+                continue
+
+            if other.adversary:
+                relative_position = self._sample_noisy_relative_position(
+                    relative_position,
+                    self.prey_std_choices,
+                    self.prey_noise_clip,
+                )
+            else:
+                relative_position = self._sample_noisy_relative_position(
+                    relative_position,
+                    self.predator_std_choices,
+                    self.predator_noise_clip,
+                )
+            obs.append(relative_position)
 
         predator_names = [name for name in self.agents if 'agent' in name]
         agent_id = np.zeros(len(predator_names), dtype=np.float32)
