@@ -38,8 +38,6 @@ def make_predator_prey_env(
     env = PredatorPreyEnv(
         mpeEnv=env,
         agents=config['env']['learned_agent_list'],
-        reward_kwargs=config['env'].get('reward_kwargs'),
-        controller_kwargs=config['env'].get('controller_kwargs'),
         seed = seed,
     )
 

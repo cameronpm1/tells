@@ -72,3 +72,6 @@ class RLLibWrapper(MultiAgentEnv):
 
     def render_rgb(self):
         return self.env.render_rgb()
+
+    def set_difficulty(self, difficulty):
+        self.env.set_difficulty(difficulty)
