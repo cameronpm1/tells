@@ -2,3 +2,6 @@
 logs/
 data/
 __pycache__/
+.DS_Store
+uv.lock
+*.egg-info/
