@@ -1,0 +1,101 @@
+seed: &seed 22
+timestep: &timestep 0.5
+horizon: &horizon 10
+logdir: logs/marl/test36_random_spawn_goal_hold_quick
+notes: Quick fine-tune for the random-spawn goal-hold setup; predators sense prey more accurately than teammates and are rewarded for centering and holding the prey on the goal.
+
+alg:
+  type : ppo
+  lr : 0.00002
+  gamma: 0.99
+  nenvs : 1
+  cpu_envs: 2
+  target_ent: 0.1
+  batch: 1024
+  batch_size: 256
+  num_gpus: 0
+  pi : [256, 256, 256]
+  vf : [256, 256, 256]
+  timesteps : 12
+  checkpoint_freq: 3
+  minibatch_size: 256
+  num_epochs: 3
+  lambda: 0.95
+  entropy_coeff: 0.0
+  clip_param: 0.05
+  vf_clip_param: 10.0
+  grad_clip: 0.25
+  initial_checkpoint: logs/marl/test34_uncertainty_finetune_gif/final
+  pretrain:
+    enabled: false
+
+env:
+  scenario: 3_agent_predator_prey
+  max_episode_length: 400
+  agent_list: ['target', 'agent0', 'agent1', 'agent2']
+  learned_agent_list: ['agent0', 'agent1', 'agent2']
+  scenario_kwargs:
+    base_speed: 1.2
+    speed_ratio: 0.35
+    spawn_around_target: true
+    predator_corner_spawn: false
+    predator_same_spawn: false
+    predator_same_spawn_jitter: 0.0
+    target_spawn_extent: 5.5
+    agent_spawn_min_radius: 2.8
+    agent_spawn_max_radius: 4.0
+    goal_spawn_min_radius: 2.8
+    goal_spawn_max_radius: 4.0
+    spawn_margin: 0.75
+    observation_noise_kwargs:
+      predator_std_choices: [0.1, 0.2, 0.35]
+      prey_std_choices: [0.03, 0.08, 0.15]
+      predator_noise_clip: 0.7
+      prey_noise_clip: 0.25
+  controller_kwargs:
+    action_threshold: 0.45
+    force_exponent: 2.5
+    boundary_margin: 0.75
+    prey_sensitivity: 1.2
+    prey_avoid_radius: 2.4
+    prey_avoid_gain: 1.5
+  reward_kwargs:
+    distance_scale: 3.0
+    chase_scale: 2.0
+    progress_scale: 20.0
+    approach_scale: 2.5
+    containment_scale: 2.5
+    coverage_scale: 2.5
+    slot_scale: 20.0
+    hold_scale: 32.0
+    success_bonus: 1000.0
+    oob_penalty: 3000.0
+    uncontrolled_goal_scale: 18.0
+    touch_penalty_scale: 3.0
+    step_cost: 0.05
+    goal_focus_temp: 0.65
+    surround_radius: 1.9
+    ideal_radius: 1.45
+    radius_tolerance: 0.45
+    hold_goal_radius: 0.28
+    hold_coverage_min: 0.6
+    hold_close_fraction: 1.0
+    hold_ring_min: 0.35
+    hold_slot_min: 0.55
+    goal_center_radius: 0.55
+    goal_center_scale: 12.0
+    goal_lock_radius: 0.2
+    goal_lock_scale: 24.0
+    success_hold_steps: 18
+    slot_switch_distance: 3.0
+    slot_push_radius: 2.1
+    slot_push_offset: 1.05
+    slot_flank_radius: 1.65
+    slot_goal_backoff: 1.0
+    slot_goal_lateral: 1.05
+    slot_tolerance: 0.8
+
+sim:
+  n: 3
+
+policy_list: ['agent0', 'agent1', 'agent2']
