@@ -1,0 +1,42 @@
+seed: &seed 22 # set experiment seed
+timestep: &timestep 1.0  #20
+horizon: &horizon 10 #10
+logdir: /home/cameron/tells/logs/marl/test59
+notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
+
+alg:
+  type : sac
+  lr : 0.0001 
+  gamma: 0.99
+  nenvs : 2
+  cpu_envs: 5
+  target_ent: 0.1
+  batch: 256
+  batch_size: 256
+  buffer_size: 1000000
+  learning_starts: 100000
+  pi : [512, 512] # #[512,512,512] #[256, 256] #
+  vf : [512, 512] # #[512,512,512] #[256, 256] #
+  cl:
+    ts_start: 500000
+    ts_end: 2500000
+    val_start: 0.0
+    val_end: 1.0
+  timesteps : 100000
+
+env:
+  scenario: 3_agent_drones
+  max_episode_length: 400
+  agent_list: ['target', 'agent0', 'agent1', 'agent2']
+  learned_agent_list: ['agent0', 'agent1', 'agent2']
+  env_kwargs:
+    grid_size : 3.0
+    capture_radius : 0.5
+    base_altitude : 1.0
+    speed_ratio : 0.4
+    target_force_threshold : 1.5
+
+sim:
+  n: 3 #number of pursuit agents
+
+policy_list: ['agent0'] #, 'agent1', 'agent2']

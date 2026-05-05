@@ -35,10 +35,10 @@ class PredatorPreyEnv(gymnasium.Env):
 
         self.ts = 0
 
-    def observation_space(self, agent):
+    def _observation_space(self, agent):
         return self.env.observation_space(agent)
 
-    def action_space(self, agent):
+    def _action_space(self, agent):
         return self.env.action_space(agent)
 
     def step(

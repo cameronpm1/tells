@@ -1,11 +1,42 @@
 import yaml
 import numpy
 from typing import Optional
+from gym_pybullet_drones.utils.enums import ActionType
 
+from envs.marl.drones_env import DronesEnv
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
 
+def make_marl_env(
+        config: dict,
+        seed: Optional[int] = None,
+        wrap: bool = True,
+        eval: bool = False,
+        render_mode: Optional[str] = None,
+):
+    '''
+    initialize marl env
 
+    input
+    -----
+    config_dir:dict
+        config dictionary
+    seed:int
+        seed
+    wrap:bool
+        if True wraps env in rllib wrapper
+    '''
+
+    env_name = config['env']['scenario']
+
+    if env_name == 'predator_prey':
+        return make_predator_prey_env(config,seed,wrap,eval,render_mode)
+    
+    elif env_name == 'drones':
+        return make_drones_env(config,seed,wrap,eval,render_mode)
+    
+    else:
+        raise NotImplementedError(f'Env {env_name} not implemented yet')
 
 def make_predator_prey_env(
         config: dict,
@@ -39,6 +70,40 @@ def make_predator_prey_env(
         mpeEnv=env,
         agents=config['env']['learned_agent_list'],
         seed = seed,
+    )
+
+    if wrap:
+        env = RLLibWrapper(env)
+    
+    return env
+
+def make_drones_env(
+        config: dict,
+        seed: Optional[int] = None,
+        wrap: bool = True,
+        eval: bool = False,
+        render_mode: Optional[str] = None,
+):
+    '''
+    initialize drones_env using pybullet-drones
+
+    input
+    -----
+    config_dir:dict
+        config dictionary
+    seed:int
+        seed
+    wrap:bool
+        if True wraps env in rllib wrapper
+    '''
+
+    env = DronesEnv(
+        agent_list=config['env']['agent_list'],
+        learned_agent_list=config['env']['learned_agent_list'],
+        gui=False,
+        act=ActionType.VEL,
+        episode_len_sec=config['env']['max_episode_length']*config['timestep'], # 10Hz step rate
+        **config['env']['env_kwargs'],
     )
 
     if wrap:

@@ -2,3 +2,6 @@
 	path = tells_environment_dynamics
 	url = https://github.com/cameronpm1/tells_environment_dynamics.git
 	branch = main
+[submodule "external/pybullet-drones"]
+	path = external/pybullet-drones
+	url = https://github.com/utiasDSL/gym-pybullet-drones.git

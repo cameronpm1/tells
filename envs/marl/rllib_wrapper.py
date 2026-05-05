@@ -26,12 +26,12 @@ class RLLibWrapper(MultiAgentEnv):
         self.possible_agents = deepcopy(env.agents)
 
         self.single_observation_spaces = {
-            agent: self.env.observation_space(agent)
+            agent: self.env._observation_space(agent)
             for agent in self.agents
         }
 
         self.single_action_spaces = {
-            agent: self.env.action_space(agent)
+            agent: self.env._action_space(agent)
             for agent in self.agents
         }
 

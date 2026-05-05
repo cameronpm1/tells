@@ -6,8 +6,8 @@ from ray.rllib.policy.policy import Policy
 from ray.tune.registry import register_env
 from ray.rllib.algorithms.ppo import PPOConfig
 
+from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
-from envs.marl.make_env import make_predator_prey_env
 from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
 from learn.marl.train import make_ray_config, marl_single_policy_mapping_fn, marl_multi_policy_mapping_fn
 
@@ -33,7 +33,7 @@ def eval(
 
     cfg = load_config(config_dir)
 
-    env = make_predator_prey_env(
+    env = make_marl_env(
         cfg,
         seed=cfg['seed'],
         wrap=True,

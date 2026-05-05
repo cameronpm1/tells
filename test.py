@@ -1,10 +1,19 @@
 import cv2
+import time
 import scipy
+import numpy as np
 import gurobipy as gp
 
 from controllers.boat_mpc import boatMPC
+from util.util import mkdir, load_config
+from envs.marl.drones_env import DronesEnv
 from tells_environment_dynamics.test import *
-from envs.make_envs import make_usv_game, make_usv_env
+from envs.rl.make_envs import make_usv_game, make_usv_env
+from envs.marl.make_env import make_drones_env, make_predator_prey_env
+from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
+
+from gym_pybullet_drones.utils.enums import ActionType
+
 
 def discretize_matrices(state_matrix,control_matrix,mass,inertia):
     '''
@@ -164,11 +173,53 @@ def gen_belief_img():
     grayscale_image = cv2.convertScaleAbs(label, alpha=255.0)
     cv2.imwrite("output_grayscale.png", grayscale_image)
 
+def drone_test():
+
+    config_path = '/home/cameron/tells/confs/drones/3a_game.yaml'
+    cfg = load_config(config_path)
+    '''
+    env = DronesEnv(
+        agent_list=["pursuer_1", "pursuer_2","target1"],
+        learned_agent_list=["pursuer_1", "pursuer_2"],
+        gui=False,
+        act=ActionType.VEL,
+        episode_len_sec=60,
+    )
+    '''
+    env = make_drones_env(config=cfg,seed=1,wrap=True)
+
+    obs, info = env.reset(seed=1)
+    images = []
+
+    for _ in range(200):  # 60 sec at ctrl_freq=30
+        # For ActionType.VEL, action shape is:
+        # (num_pursuers, 4) = [vx_dir, vy_dir, vz_dir, speed_fraction]
+        # All zeros means commanded hover/no motion.
+        action = {}
+        for agent in env.agents:
+            action[agent] = np.zeros((4), dtype=np.float32)
+
+        obs, reward, terminated, truncated, info = env.step(action)
+
+        time.sleep(0.1)
+
+        #if terminated or truncated:
+        #    obs, info = env.reset()
+
+        images.append(env.render_rgb())
+
+    save_file = 'test_vid.gif'
+    print('generating video in ' + save_file)
+    save_rgb_gif(images,save_file)
+
+    env.close()
+
 if __name__ == "__main__":
     #test_boat_dynamics()
     #model = gp.Model()
     #boat_move()
 
-    gen_belief_img()
+    #gen_belief_img()
     #test_usv_game()
     #test_usv_env()
+    drone_test()

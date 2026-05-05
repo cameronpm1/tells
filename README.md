@@ -7,6 +7,12 @@ This repository provides a training environment for collaborative multi-agent be
 - MARL (Multi-Agent Reinforcement Learning) codebase
 - Uses RLlib with Soft Actor-Critic (SAC) for training
 
+## Installing Pybullet
+```bash
+git submodule update --init --recursive
+
+pip install -e external/pybullet-drones
+```
 ---
 
 ## Usage

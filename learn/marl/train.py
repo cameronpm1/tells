@@ -30,14 +30,12 @@ from ray.rllib.utils.metrics import (
 
 #from logger import getlogger
 from util.util import mkdir, load_config
+rom envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
 from learn.marl.callbacks import CurriculumCallback
-from envs.marl.make_env import make_predator_prey_env
 
 #logger = getlogger(__name__)
 
-<<<<<<< HEAD
-=======
 def _load_checkpoint_iteration(checkpoint_dir: str) -> int | None:
     state_path = os.path.join(checkpoint_dir, 'algorithm_state.pkl')
     if not os.path.exists(state_path):
@@ -83,7 +81,6 @@ def _save_checkpoint(algo, checkpoint_dir: str):
         shutil.rmtree(checkpoint_dir)
     algo.save(checkpoint_dir=checkpoint_dir)
 
->>>>>>> parent of 71330b2 (Implement PPO and introduce a new reward function for better behavior guidance.)
 def train(config_path: str):
 
     cfg = load_config(config_path)
@@ -104,9 +101,6 @@ def train(config_path: str):
 
     algo_config = make_ray_config(cfg)
 
-<<<<<<< HEAD
-    algo_build = algo_config.build_algo(logger_creator=logger_creator)  
-=======
     algo_build = algo_config.build_algo(logger_creator=logger_creator)
 
     resume_dir, resume_iter = _find_latest_checkpoint(logdir)
@@ -116,7 +110,6 @@ def train(config_path: str):
         algo_build.restore(resume_dir)
         start_iter = max(resume_iter, 0)
         print(f'Restored training iteration: {start_iter}')
->>>>>>> parent of 71330b2 (Implement PPO and introduce a new reward function for better behavior guidance.)
 
     #train 15,000 iterations
     for i in range(int(cfg['alg']['timesteps'])): 
@@ -153,7 +146,7 @@ def make_ray_config(
         if config is not None:
             seed += ((1000*config.worker_index + config.vector_index))   
 
-        env = make_predator_prey_env(cfg,seed=int(seed),wrap=True)
+        env = make_marl_env(cfg,seed=int(seed),wrap=True)
 
         return env
         
