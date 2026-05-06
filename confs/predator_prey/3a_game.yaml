@@ -1,6 +1,7 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
+min_obs: 1
 logdir: /home/cameron/tells/logs/marl/test59
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
@@ -25,7 +26,7 @@ alg:
   timesteps : 100000
 
 env:
-  scenario: 3_agent_predator_prey
+  scenario: predator_prey
   max_episode_length: 400
   agent_list: ['target', 'agent0', 'agent1', 'agent2']
   learned_agent_list: ['agent0', 'agent1', 'agent2']

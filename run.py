@@ -37,7 +37,7 @@ if __name__ == "__main__":
             print('Loading model from:', args.model_dir)
             eval(args.config,args.model_dir)
 
-    elif 'rl_collect_data' in args.command:
+    elif 'rl_collect_data' == args.command:
 
         if args.model_dir is None:
             print('ERROR: No model directory provided for evaluation')
@@ -99,6 +99,26 @@ if __name__ == "__main__":
         print('Evaluating RL model with config:', args.config)
         print('Loading model from:', args.model_dir)
         eval(args.config,args.model_dir,args.runs)
+
+    elif 'marl_collect_data' == args.command:
+
+        if args.model_dir is None:
+            print('ERROR: No model directory provided for evaluation')
+            exit()
+        else:
+
+            torch.set_num_threads(9)
+            from evals.marl.collect_eval_data import collect_data
+
+            if args.save_dir is None:
+                save_dir = 'data/' + args.model_dir.split('rl/')[1].split('/')[0]
+            else:
+                save_dir = 'data/' + args.save_dir
+            print('Collecting data with RL model and config:', args.config)
+            print('Loading model from:', args.model_dir)
+            print('Saving data to:', save_dir)
+
+            collect_data(args.config, args.model_dir, save_dir, n_runs=args.runs, n_workers=args.n_workers)
 
     elif 'belief_train' in args.command:
 

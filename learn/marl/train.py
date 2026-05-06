@@ -30,7 +30,7 @@ from ray.rllib.utils.metrics import (
 
 #from logger import getlogger
 from util.util import mkdir, load_config
-rom envs.marl.make_env import make_marl_env
+from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
 from learn.marl.callbacks import CurriculumCallback
 
