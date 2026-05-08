@@ -29,10 +29,10 @@ def make_marl_env(
 
     env_name = config['env']['scenario']
 
-    if env_name == 'predator_prey':
+    if 'predator_prey' in env_name:
         return make_predator_prey_env(config,seed,wrap,eval,render_mode)
     
-    elif env_name == 'drones':
+    elif 'drones' in env_name:
         return make_drones_env(config,seed,wrap,eval,render_mode)
     
     else:
@@ -73,7 +73,7 @@ def make_predator_prey_env(
     )
 
     if wrap:
-        env = RLLibWrapper(env)
+        env = RLLibWrapper(env,eval)
     
     return env
 

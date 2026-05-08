@@ -117,7 +117,7 @@ if __name__ == "__main__":
             print('Collecting data with RL model and config:', args.config)
             print('Loading model from:', args.model_dir)
             print('Saving data to:', save_dir)
-
+            
             collect_data(args.config, args.model_dir, save_dir, n_runs=args.runs, n_workers=args.n_workers)
 
     elif 'belief_train' in args.command:

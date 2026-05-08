@@ -148,7 +148,9 @@ class DronesEnv(BaseRLAviary):
 
         self.INIT_XYZS = self._sample_initial_xyzs(self._rng)
 
-        return super().reset(seed=seed, options=options)
+        obs, info = super().reset(seed=seed, options=options)
+
+        return self._convert_experience_to_dict(obs,info)
 
     def step(self, action_dict):
 
@@ -176,14 +178,58 @@ class DronesEnv(BaseRLAviary):
 
         return self._convert_experience_to_dict(obs, reward, terminated, truncated, info)
 
-    def _convert_experience_to_dict(self, obs, reward, terminated, truncated, info):
-        obs_dict = {agent: obs[i] for i, agent in enumerate(self.agents)}
-        reward_dict = {agent: reward for agent in self.agents}
-        terminated_dict = {agent: terminated for agent in self.agents}
-        truncated_dict = {agent: truncated for agent in self.agents}
-        info_dict = {agent: info for agent in self.agents}
+    def _convert_experience_to_dict(self, obs, *args):
 
-        return obs_dict, reward_dict, terminated_dict, truncated_dict, info_dict
+        obs_dict = {
+            agent: obs[i]
+            for i, agent in enumerate(self.agents)
+        }
+
+        if len(args) == 1:
+            info = args[0]
+
+            info_dict = {
+                agent: dict(info)
+                for agent in self.agents
+            } if isinstance(info, dict) else {
+                agent: info
+                for agent in self.agents
+            }
+
+            return obs_dict, info_dict
+
+        if len(args) == 4:
+            reward, terminated, truncated, info = args
+
+            reward_dict = {
+                agent: reward
+                for agent in self.agents
+            }
+
+            terminated_dict = {
+                agent: terminated
+                for agent in self.agents
+            }
+
+            truncated_dict = {
+                agent: truncated
+                for agent in self.agents
+            }
+
+            info_dict = {
+                agent: dict(info)
+                for agent in self.agents
+            } if isinstance(info, dict) else {
+                agent: info
+                for agent in self.agents
+            }
+
+            return obs_dict, reward_dict, terminated_dict, truncated_dict, info_dict
+
+        raise ValueError(
+            "Expected either (obs, info) or "
+            "(obs, reward, terminated, truncated, info)."
+        )
 
     def _scripted_target_action(self):
         """

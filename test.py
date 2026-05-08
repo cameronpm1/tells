@@ -222,4 +222,4 @@ if __name__ == "__main__":
     #gen_belief_img()
     #test_usv_game()
     #test_usv_env()
-    drone_test()
+    #drone_test()

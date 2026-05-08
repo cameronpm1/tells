@@ -33,3 +33,28 @@ def save_rgb_gif(images, output_path, fps=10):
 
     duration = 1 / fps  # seconds per frame
     imageio.mimsave(output_path, images, duration=duration)
+
+def save_cv2_images_as_gif(images, output_path, fps=10):
+    """
+    images: list of cv2 images (BGR numpy arrays)
+    output_path: path to save the gif (e.g., "output.gif")
+    fps: frames per second
+    """
+
+    if len(images) == 0:
+        raise ValueError("Image list is empty")
+
+    rgb_frames = []
+
+    for img in images:
+        if img is None:
+            continue
+
+        # Convert BGR to RGB
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        rgb_frames.append(rgb)
+
+    duration = 1 / fps
+
+    imageio.mimsave(output_path, rgb_frames, duration=duration)
+

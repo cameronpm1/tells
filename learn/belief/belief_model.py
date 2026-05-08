@@ -13,9 +13,123 @@ from torchvision import transforms
 import torchvision.models as models
 from torch.utils.data import DataLoader
 
+from util.util import *
 from learn.belief.models import *
 from learn.rl.custom_callbacks import create_image
 from learn.belief.custom_dataset import CustomDataset
+
+import numpy as np
+import cv2
+
+
+import numpy as np
+import cv2
+
+
+def create_mpe_image(
+    coords,
+    colors,
+    stars,
+    width=800,
+    height=800,
+    radius=5,
+    world_range=10,
+    background=(255, 255, 255),
+    output_path=None,
+):
+    """
+    Create an RGB image from world coordinates.
+
+    Coordinate system:
+        x, y ∈ [-world_range, world_range]
+
+    (0,0) is centered in the image.
+
+    """
+
+    # create background
+    img = np.full((height, width, 3), background, dtype=np.uint8)
+
+    # color map (RGB)
+    color_map = {
+        "r": (255, 0, 0),
+        "g": (0, 255, 0),
+        "b": (0, 0, 255),
+        "y": (255, 255, 0),
+        "w": (255, 255, 255),
+        "k": (0, 0, 0),
+        "c": (0, 255, 255),
+        "m": (255, 0, 255),
+    }
+
+    for (x, y), c, s in zip(coords, colors, stars):
+
+        if c not in color_map:
+            raise ValueError(f"Unknown color code: {c}")
+
+        # world -> image transform
+        px = int(((x + world_range) / (2 * world_range)) * width)
+        py = int(((world_range - y) / (2 * world_range)) * height)
+
+        rgb = color_map[c]
+
+        # RGB -> BGR
+        bgr = (rgb[2], rgb[1], rgb[0])
+
+        # ---- DRAW STAR ----
+        if s == 1:
+
+            star_size = radius * 2
+
+            cv2.line(
+                img,
+                (px - star_size, py),
+                (px + star_size, py),
+                bgr,
+                2,
+            )
+
+            cv2.line(
+                img,
+                (px, py - star_size),
+                (px, py + star_size),
+                bgr,
+                2,
+            )
+
+            cv2.line(
+                img,
+                (px - star_size, py - star_size),
+                (px + star_size, py + star_size),
+                bgr,
+                2,
+            )
+
+            cv2.line(
+                img,
+                (px - star_size, py + star_size),
+                (px + star_size, py - star_size),
+                bgr,
+                2,
+            )
+
+        # ---- DRAW NORMAL DOT ----
+        else:
+            cv2.circle(
+                img,
+                center=(px, py),
+                radius=radius,
+                color=bgr,
+                thickness=-1,
+            )
+
+    # convert to RGB before returning
+    #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    #if output_path is not None:
+    #    cv2.imwrite(output_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
+    return img
 
 COLOR_SCALE = np.array([
     [255, 0,   0],
@@ -92,35 +206,6 @@ def boat_plot_data(
     plot_data['colors'] = colors
 
     return plot_data
-
-def save_cv2_images_as_gif(images, output_path, fps=10):
-    """
-    images: list of cv2 images (BGR numpy arrays)
-    output_path: path to save the gif (e.g., "output.gif")
-    fps: frames per second
-    """
-
-    if len(images) == 0:
-        raise ValueError("Image list is empty")
-
-    rgb_frames = []
-
-    for img in images:
-        if img is None:
-            continue
-
-        # Convert BGR to RGB
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        rgb_frames.append(rgb)
-
-    duration = 1 / fps
-
-    imageio.mimsave(output_path, rgb_frames, duration=duration)
-
-def mkdir(folder):
-    if os.path.exists(folder):
-        shutil.rmtree(folder)
-    os.makedirs(folder)
 
 class BeliefModel(pl.LightningModule):
 
@@ -206,7 +291,7 @@ class BeliefModel(pl.LightningModule):
             folder = folderlist[folder_idx]
             file_names = [s for i, s in enumerate(self.test_dataset.get_filelist()) if folder in s]
             if len(file_names) > 0:
-                file_names.sort()
+                file_names = sorted(file_names, key=lambda s: int(s.split("_")[1]))
                 file_idxs = [self.all_filepaths.index(s) for s in file_names if s in self.all_filepaths]
                 #for i in file_idxs:
                 #    print(self.all_filepaths[i])
@@ -214,31 +299,25 @@ class BeliefModel(pl.LightningModule):
                 for idx in file_idxs:
                     pred = self.all_predictions[idx]
                     gt = self.all_ground_truths[idx]
-                    start = self.all_inputs[idx]
+                    data = self.all_inputs[idx]
+                    offset = data[-4:-2]
                     poses = np.array([
-                        [0.0,0.0],
-                        [start[3],start[4]],
-                        [gt[0],gt[1]],
-                        [gt[3],gt[4]],
-                        [pred[0],pred[1]],
-                        [pred[3],pred[4]],
-                    ])
-                    hdgs = np.array([
-                        start[2],
-                        start[7],
-                        gt[2],
-                        gt[5],
-                        pred[2],
-                        pred[5],
+                            - offset,
+                        data[-2:]-offset,
+                        pred[0:2]  - offset,
+                        pred[2:4] - offset,
+                        gt[0:2] - offset,
+                        gt[2:4] - offset,
+                        data[-4:-2] - offset
                     ])
                     #print(np.linalg.norm(np.array([gt[0],gt[1]]) - np.array([pred[0],pred[1]])))
-                    clrs = ['k','k','g','g','r','r']
-                    plot_data = boat_plot_data(poses, hdgs, scale=10, color=clrs)
-                    img = create_image(plot_data,xlim=(-300,300),ylim=(-300,300))
+                    clrs = ['b','k','g','g','r','r','k']
+                    stars = [0,0,0,0,0,0,1]
+                    img = create_mpe_image(poses,clrs,stars)
                     imgs.append(img)
 
                 save_file = os.path.join(save_dir, f'sim_{folder_idx}.gif')
-                save_cv2_images_as_gif(imgs, save_file, fps=0.001)
+                save_cv2_images_as_gif(imgs, save_file, fps=0.005)
                 #cv2.imwrite(save_file, img)
             
 
