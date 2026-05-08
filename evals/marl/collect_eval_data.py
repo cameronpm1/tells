@@ -13,7 +13,7 @@ from ray.tune.registry import register_env
 from ray.rllib.algorithms.ppo import PPOConfig
 
 from envs.marl.make_env import make_marl_env
-from learn.marl.train import make_ray_config, marl_single_policy_mapping_fn, marl_multi_policy_mapping_fn
+from learn.marl.train import make_ray_config, marl_policy_mapping_fn
 
 def mkdir(folder):
     if os.path.exists(folder):
@@ -111,13 +111,14 @@ def data_worker(
     '''
 
     cfg = load_config(config_dir)
-    target_obs = cfg['min_obs']
+    min_obs = cfg['min_obs']
     cfg['min_obs'] = cfg['horizon'] * 10
     cfg['seed'] = seed 
     env = make_marl_env(
         cfg,
         seed=cfg['seed'],
         wrap=True,
+        eval=True
     )
 
     if checkpoint_dir is not None:
@@ -129,10 +130,7 @@ def data_worker(
         exit()
 
     policy_list = cfg['policy_list']
-    if len(policy_list) == 1:
-        policy_mapping_fn = marl_single_policy_mapping_fn
-    else:
-        policy_mapping_fn = marl_multi_policy_mapping_fn
+    policy_mapping_fn = marl_policy_mapping_fn
 
     for n in range(n_runs):
 
@@ -141,6 +139,13 @@ def data_worker(
 
         obs, _ = env.reset()
         done = {"__all__": False}
+        step = 0
+        target_obs = {}
+
+        episode_agent = np.random.choice(cfg['env']['learned_agent_list'])
+
+        #for agent_name in cfg['env']['learned_agent_list']:
+        target_obs[episode_agent] = []
 
         while not done["__all__"]:
 
@@ -153,6 +158,7 @@ def data_worker(
                     explore=False
                 )
                 actions[agent_id] = action
+            step += 1
 
             obs, rewards, terminations, truncations, infos = env.step(actions)
 
@@ -160,19 +166,19 @@ def data_worker(
                 "__all__": terminations["__all__"] or truncations["__all__"]
             }
 
-            print(obs)
+            #for agent_name in cfg['env']['learned_agent_list']:
+                #ASSUMES TARGET POS DOESNT CHANGE
+            if cfg['env']['scenario'] == 'predator_prey':
+                target_obs[episode_agent].append(np.concatenate([obs[episode_agent][4:6], obs[episode_agent][6:8]]))
 
-            for agent_id, r in rewards.items():
-                total_reward[agent_id] += r
-
-            true_obs = {
-                'target_true' : obs['target'],
-            }
-            for i in range(env.n_boats):
-                true_obs['chaser'+str(i)+'_true'] = obs['chaser'+str(i)+'_true']
-            true_obs['target_goal'] = obs['target_goal']
-            save_path = os.path.join(save_dir,'step_'+str(j)+'.npz')
-            np.savez(save_path,**true_obs)
+            if step >= min_obs:
+                full_obs = {}
+                #for agent_name in cfg['env']['learned_agent_list']:
+                full_obs[episode_agent] = {}
+                full_obs[episode_agent]['target_true'] = target_obs[episode_agent][-min_obs:]
+                full_obs[episode_agent]['team_true'] = obs[episode_agent][8:12]
+                save_path = os.path.join(save_dir,'step_'+str(step)+'_'+episode_agent+'.npz')
+                np.savez(save_path,**full_obs[episode_agent])
 
         obs, _ = env.reset()
     

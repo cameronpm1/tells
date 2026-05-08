@@ -79,8 +79,8 @@ class NN(nn.Module):
 		self.linear1 = nn.Linear(input_channels,512) 
 		self.linear2 = nn.Linear(512,1024) 
 		self.linear3 = nn.Linear(1024,4096)
-		self.linear4 = nn.Linear(4096,4096)
-		self.linear5 = nn.Linear(4096,4096)
+		#self.linear4 = nn.Linear(4096,4096)
+		#self.linear5 = nn.Linear(4096,4096)
 		#self.linear6 = nn.Linear(4096,4096)
 		self.linear6 = nn.Linear(4096,1024)
 		self.linear7 = nn.Linear(1024,64) 
@@ -93,8 +93,8 @@ class NN(nn.Module):
 		x = nn.functional.relu(self.linear1(x))
 		x = nn.functional.relu(self.linear2(x))
 		x = nn.functional.relu(self.linear3(x))
-		x = nn.functional.relu(self.linear4(x))
-		x = nn.functional.relu(self.linear5(x))
+		#x = nn.functional.relu(self.linear4(x))
+		#x = nn.functional.relu(self.linear5(x))
 		#x = nn.functional.relu(self.linear6(x))
 		x = nn.functional.relu(self.linear6(x))
 		x = nn.functional.relu(self.linear7(x))
@@ -108,19 +108,20 @@ class PermutationInvariantMSE(nn.Module):
 		super().__init__()
 
 	def forward(self, pred, target):
-		l1 = self.permutation_invariant_loss(pred[:,0:6], target[:,0:6])
-		l2 = self.permutation_invariant_loss(pred[:,6:], target[:,6:])
-		return l1 + l2
+
+		l1 = self.permutation_invariant_loss(pred[:,0:4], target[:,0:4])
+		#l2 = self.permutation_invariant_loss(pred[:,2:4], target[:,2:4])
+		return l1 #+ l2
 
 	def permutation_invariant_loss(self, pred, target):
 		"""
-		pred:   (batch, 6)
-		target: (batch, 6)
+		pred:   (batch, 4)
+		target: (batch, 4)
 		"""
 
 		# reshape to (batch, 2, 3)
-		pred = pred.view(-1, 2, 3)
-		target = target.view(-1, 2, 3)
+		pred = pred.view(-1, 2, 2)
+		target = target.view(-1, 2, 2)
 
 		# direct assignment
 		loss1 = ((pred - target) ** 2).mean(dim=2).sum(dim=1)
@@ -143,8 +144,8 @@ class PermutationInvariantMSE(nn.Module):
 		"""
 
 		# Reshape to (N, 2, 3)
-		pred = pred.reshape(-1, 2, 3)
-		target = target.reshape(-1, 2, 3)
+		pred = pred.reshape(-1, 2, 2)
+		target = target.reshape(-1, 2, 2)
 
 		# Direct assignment distances
 		direct = (

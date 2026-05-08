@@ -18,10 +18,12 @@ class RLLibWrapper(MultiAgentEnv):
     def __init__(
             self,
             env,
+            eval: bool = False,
     ): 
         super().__init__()
 
         self.env = env
+        self.eval = eval
         self.agents = deepcopy(env.agents)
         self.possible_agents = deepcopy(env.agents)
 
@@ -54,6 +56,16 @@ class RLLibWrapper(MultiAgentEnv):
         truncated_all = False
 
         obs,rew,terminated,truncated,_ = self.env.step(action_dict)
+
+        if self.eval:
+            infos = {'target': obs['target']}
+        else:
+            infos = {}
+
+        obs.pop("target", None)
+        rew.pop('target', None)
+        terminated.pop('target', None)
+        truncated.pop('target', None)
 
         terminated["__all__"] = all(terminated.values())
         truncated["__all__"] = all(truncated.values())

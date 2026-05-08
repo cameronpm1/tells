@@ -9,7 +9,7 @@ from ray.rllib.algorithms.ppo import PPOConfig
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
 from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
-from learn.marl.train import make_ray_config, marl_single_policy_mapping_fn, marl_multi_policy_mapping_fn
+from learn.marl.train import make_ray_config, marl_policy_mapping_fn
 
 
 def eval(
@@ -97,10 +97,7 @@ def eval_single_episode(
     step_count = 0
 
     policy_list = cfg['policy_list']
-    if len(policy_list) == 1:
-        policy_mapping_fn = marl_single_policy_mapping_fn
-    else:
-        policy_mapping_fn = marl_multi_policy_mapping_fn
+    policy_mapping_fn = marl_policy_mapping_fn
 
     while not done["__all__"]:
 

@@ -1,20 +1,20 @@
 lr: 0.000001
-seed: 1
+seed: 2
 if_cuda: True
 gamma: 0.5
 log_dir: 'logs/belief/'
-label: 'test33'
+label: 'ppotest7'
 train_batch: 256
 val_batch: 256
 test_batch: 256
 num_workers: 15
 num_gpus: 1
 model_name: 'NN'
-input_channels: 18
-output_channels: 12
+input_channels: 80
+output_channels: 4
 data_dir: 'data/'
-data_name: 'circle_dist_noise'
+data_name: 'ppotest1'
 lr_schedule: []
-epochs: 3000
+epochs: 1000
 
-#50x50 output, larger model, median loc, new data
+#everythin rel to adversary

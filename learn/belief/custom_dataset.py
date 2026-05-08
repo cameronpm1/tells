@@ -73,13 +73,12 @@ class CustomDataset(Dataset):
 
         for data_idx in data_list:
             seq_filepath = os.path.join(data_filepath, str(data_idx))
-            num_datap = int(len(os.listdir(seq_filepath)))
+            dataps = os.listdir(seq_filepath)
             suf = os.listdir(seq_filepath)[0].split('.')[-1]
             #append pairs of data and label file names ([x,y]) to total file list
             folderlist.append(seq_filepath)
-            for datap in range(num_datap):
-                if datap > 10:
-                    filelist.append(os.path.join(seq_filepath, 'step_' + str(datap) + '.' + suf))
+            for datap in dataps:
+                filelist.append(os.path.join(seq_filepath, datap))
 
         self.filelist = filelist
         self.folderlist = folderlist
@@ -106,7 +105,26 @@ class CustomDataset(Dataset):
 
         current function works for training model that predicts target boat future location given current and location of all other boats
         '''
+
+        datapoint = np.load(filepath, allow_pickle=True)
+        data_labels = datapoint.files
+
+        #idx = int(filepath.split('/')[2])
+        #a_idx = idx%3
+        #agent_name = data_labels[a_idx]
+        #print(type(datapoint[str(agent_name)][0]))
+
+
+        xy_pairs = np.array(datapoint['target_true']).flatten().reshape(-1, 2)  
+        last_pos = xy_pairs[-1:]   
+        data_rel = xy_pairs - last_pos
+
+        label = np.array(datapoint['team_true']).flatten().reshape(-1, 2)  
+        label_rel = label - last_pos
+
+        return torch.from_numpy(data_rel.flatten()).to(torch.float32), torch.from_numpy(label_rel.flatten()).to(torch.float32)
         
+        '''
         label_size = 50
         magnify = 2
 
@@ -158,6 +176,7 @@ class CustomDataset(Dataset):
 
         #return torch.from_numpy(np.array(data).flatten()).to(torch.float32), torch.from_numpy(np.array(label).flatten()).to(torch.float32)
         return torch.from_numpy(np.array(new_data).flatten()).to(torch.float32), torch.from_numpy(np.array(label)).to(torch.float32)
+        '''
 
 
     def get_data_old(
