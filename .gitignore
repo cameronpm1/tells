@@ -1,4 +1,5 @@
 .venv/
+.venv_ic3net/
 logs/
 data/
 __pycache__/

@@ -19,13 +19,16 @@ class RLLibWrapper(MultiAgentEnv):
             self,
             env,
             eval: bool = False,
+            belief: bool = False,
     ): 
         super().__init__()
 
         self.env = env
         self.eval = eval
+        self.belief = belief
         self.agents = deepcopy(env.agents)
         self.possible_agents = deepcopy(env.agents)
+        self.last_raw_reward = None
 
         self.single_observation_spaces = {
             agent: self.env._observation_space(agent)
@@ -56,6 +59,7 @@ class RLLibWrapper(MultiAgentEnv):
         truncated_all = False
 
         obs,rew,terminated,truncated,_ = self.env.step(action_dict)
+        rew = dict(rew)
 
         if self.eval:
             infos = {'target': obs['target']}
@@ -70,14 +74,30 @@ class RLLibWrapper(MultiAgentEnv):
         terminated["__all__"] = all(terminated.values())
         truncated["__all__"] = all(truncated.values())
         #print(obs.keys(),rew.keys(),terminated.keys(),truncated.keys(),_.keys())
+        
+        if self.belief:
+            for agent in self.agents:
+                obs[agent+'_partial'] = obs[agent][4:8]
+        
+        infos['__common__'] = {}
+        infos['__common__']['raw_reward'] = sum(rew.values())
+        self.last_raw_reward = sum(rew.values())
 
-        return obs,dict(rew),terminated,truncated,{}
+        return obs,rew,terminated,truncated,infos
     
     def reset(self, **kwargs):
-        obs,info = {},{}
-        obs,info = self.env.reset(**kwargs)
+        obs,infos = {},{}
+        obs,infos = self.env.reset(**kwargs)
 
-        return obs,info
+        infos['__common__'] = {}
+        infos['__common__']['raw_reward'] = 0.0
+        self.last_raw_reward = 0.0
+
+        if self.belief:
+            for agent in self.agents:
+                obs[agent+'_partial'] = obs[agent][4:8]
+
+        return obs,infos
     
     def close(self):
         self.env.unwrapped.close()

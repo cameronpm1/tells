@@ -10,9 +10,10 @@ import logging
 import pickle
 import numpy as np
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
+from typing import Optional
 from omegaconf import DictConfig, OmegaConf
 from hydra.core.hydra_config import HydraConfig
+from torch.utils.data import DataLoader, TensorDataset
 
 from ray.tune.logger import pretty_print
 from ray.rllib.utils.test_utils import (
@@ -20,7 +21,6 @@ from ray.rllib.utils.test_utils import (
     run_rllib_example_script_experiment,
 )
 from ray.rllib.models import ModelCatalog
-from ray.tune.logger import UnifiedLogger
 from ray.tune.registry import register_env
 from ray.rllib.algorithms.sac import SACConfig
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -35,6 +35,7 @@ from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
 from controllers.marl_slot_controller import compute_slot_actions
+from learn.marl.callbacks import CurriculumCallback, LogRawEpisodeReturn
 
 
 #logger = getlogger(__name__)
@@ -103,7 +104,7 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
     rows = []
 
     for seed_offset in range(runs):
-        env = make_predator_prey_env(cfg, seed=int(cfg['seed']) + seed_offset, wrap=False)
+        env = make_marl_env(cfg, seed=int(cfg['seed']) + seed_offset, wrap=None)
         obs, _ = env.reset()
 
         best_dist = float('inf')
@@ -152,10 +153,10 @@ def _collect_slot_controller_dataset(cfg: dict, episodes: int):
     learned_agents = cfg['env']['learned_agent_list']
 
     for episode_idx in range(episodes):
-        env = make_predator_prey_env(
+        env = make_marl_env(
             cfg,
             seed=int(cfg['seed']) + episode_idx,
-            wrap=False,
+            wrap=None,
         )
         obs, _ = env.reset()
         trajectory = []
@@ -315,7 +316,11 @@ def train(config_path: str):
     OmegaConf.save(config=cfg, f=logdir+'/config.yaml')
 
     def logger_creator(config):
-        return UnifiedLogger(config, logdir, loggers=None)
+        try:
+            from ray.tune.logger import UnifiedLogger
+            return UnifiedLogger(config, logdir, loggers=None)
+        except:
+            print('Cannot import unified logger, check ray version...')
 
     algo_config = make_ray_config(cfg)
 
@@ -362,7 +367,8 @@ def train(config_path: str):
 
 
 def make_ray_config(
-    cfg: dict
+    cfg: dict,
+    wrapper: Optional[str] = 'rllib',
 ):
     '''
     takes loaded config and returns ray config file for tarining rl
@@ -384,7 +390,7 @@ def make_ray_config(
         if config is not None:
             seed += ((1000*config.worker_index + config.vector_index))   
 
-        env = make_marl_env(cfg,seed=int(seed),wrap=True)
+        env = make_marl_env(cfg,seed=int(seed),wrap=wrapper)
 
         return env
         
@@ -500,6 +506,7 @@ def make_ray_config(
                             policies_to_train=policy_training_fn,
                             policies=policy_info)
             .training(**training_kwargs)
+            .callbacks(callbacks_class=LogRawEpisodeReturn)
     )
 
     if 'ppo' in cfg['alg']['type']:

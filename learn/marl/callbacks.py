@@ -1,3 +1,4 @@
+import numpy as np
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 
 class CurriculumCallback(DefaultCallbacks):
@@ -42,3 +43,46 @@ class CurriculumCallback(DefaultCallbacks):
 
         #tensorbaord logging
         result["curriculum/difficulty"] = self.difficulty
+
+class LogRawEpisodeReturn(DefaultCallbacks):
+    def on_episode_start(
+        self,
+        *,
+        worker,
+        base_env,
+        policies,
+        episode,
+        env_index,
+        **kwargs,
+    ):
+
+        episode.user_data['raw_rewards'] = []
+
+    def on_episode_step(
+        self,
+        *,
+        worker,
+        base_env,
+        episode,
+        env_index,
+        **kwargs,
+    ):
+
+        env = base_env.get_sub_environments()[env_index]
+
+        if hasattr(env, 'last_raw_reward'):
+            episode.user_data['raw_rewards'].append(float(env.last_raw_reward))
+
+    def on_episode_end(
+        self,
+        *,
+        worker,
+        base_env,
+        policies,
+        episode,
+        env_index,
+        **kwargs,
+    ):
+        raw_return = float(np.sum(episode.user_data.get('raw_rewards', [])))
+
+        episode.custom_metrics['raw_episode_return'] = raw_return

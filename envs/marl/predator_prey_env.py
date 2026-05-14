@@ -27,11 +27,14 @@ class PredatorPreyEnv(gymnasium.Env):
         reward_kwargs: Optional[dict] = None,
         controller_kwargs: Optional[dict] = None,
         seed: Optional[int] = None,
+        local_observations: bool = False,
     ):
 
         self.env = mpeEnv
         self.env.reset(seed=seed)
         self.agents = agents
+        self.local_observations = local_observations
+        self.env.unwrapped.local_observations = local_observations
         self.reward_cfg = {
             'distance_scale': 2.0,
             'chase_scale': 2.0,
@@ -585,6 +588,7 @@ class PredatorPreyScenario(BaseScenario):
         self.agent_spawn_max_radius = agent_spawn_max_radius
         self.goal_spawn_min_radius = goal_spawn_min_radius
         self.goal_spawn_max_radius = goal_spawn_max_radius
+        self.local_observations = False
 
     def make_world(self):
 
@@ -771,7 +775,7 @@ class PredatorPreyScenario(BaseScenario):
             obs.append(landmark.state.p_pos - agent.state.p_pos)
 
         for other in world.agents:
-            if other is agent:
+            if other is agent or (self.local_observations and 'agent' in other.name):
                 continue
                 #obs.append(other.state.p_pos)
             obs.append(other.state.p_pos - agent.state.p_pos)

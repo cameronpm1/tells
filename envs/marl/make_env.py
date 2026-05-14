@@ -5,14 +5,16 @@ from gym_pybullet_drones.utils.enums import ActionType
 
 from envs.marl.drones_env import DronesEnv
 from envs.marl.rllib_wrapper import RLLibWrapper
+from envs.marl.IC3Net_wrapper import IC3NetWrapper
 from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
 
 def make_marl_env(
         config: dict,
         seed: Optional[int] = None,
-        wrap: bool = True,
+        wrap: Optional[str] = 'rllib',
         eval: bool = False,
         render_mode: Optional[str] = None,
+        belief: bool = False,
 ):
     '''
     initialize marl env
@@ -30,10 +32,10 @@ def make_marl_env(
     env_name = config['env']['scenario']
 
     if 'predator_prey' in env_name:
-        return make_predator_prey_env(config,seed,wrap,eval,render_mode)
+        return make_predator_prey_env(config,seed,wrap,eval,render_mode,belief)
     
     elif 'drones' in env_name:
-        return make_drones_env(config,seed,wrap,eval,render_mode)
+        return make_drones_env(config,seed,wrap,eval,render_mode,belief)
     
     else:
         raise NotImplementedError(f'Env {env_name} not implemented yet')
@@ -41,9 +43,10 @@ def make_marl_env(
 def make_predator_prey_env(
         config: dict,
         seed: Optional[int] = None,
-        wrap: bool = True,
+        wrap: Optional[str] = 'rllib',
         eval: bool = False,
         render_mode: Optional[str] = None,
+        belief: bool = False,
 ):
     '''
     initialize usv_gym_env
@@ -70,19 +73,23 @@ def make_predator_prey_env(
         mpeEnv=env,
         agents=config['env']['learned_agent_list'],
         seed = seed,
+        local_observations = config['env']['local_observations'],
     )
 
-    if wrap:
-        env = RLLibWrapper(env,eval)
+    if wrap == 'rllib':
+        env = RLLibWrapper(env,eval,belief)
+    elif wrap == 'ic3net':
+        env = IC3NetWrapper(env)
     
     return env
 
 def make_drones_env(
         config: dict,
         seed: Optional[int] = None,
-        wrap: bool = True,
+        wrap: Optional[str] = 'rllib',
         eval: bool = False,
         render_mode: Optional[str] = None,
+        belief: bool = False,
 ):
     '''
     initialize drones_env using pybullet-drones
@@ -106,7 +113,9 @@ def make_drones_env(
         **config['env']['env_kwargs'],
     )
 
-    if wrap:
-        env = RLLibWrapper(env)
+    if wrap == 'rllib':
+        env = RLLibWrapper(env,eval,belief)
+    elif wrap == 'ic3net':
+        env = IC3NetWrapper(env)
     
     return env

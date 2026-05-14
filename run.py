@@ -10,6 +10,8 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, default=None, help='Config file path')
     parser.add_argument('--runs', type=int, default=10, help='Number of runs to test')
     parser.add_argument('--model_dir', type=str, default=None, help='Model directory for evaluation')
+    parser.add_argument('--belief_config', type=str, default=None, help='Config file for belief model')
+    parser.add_argument('--belief_dir', type=str, default=None, help='Model directory for belief model')
     parser.add_argument('--save_dir', type=str, default=None, help='Directory to save evaluation data to')
     parser.add_argument('--n_workers', type=int, default=1, help='Number of parallel workers to use for data collection')
     args = parser.parse_args()
@@ -79,7 +81,7 @@ if __name__ == "__main__":
         print('Training marl policies with config:', args.config)
         train(args.config)
 
-    elif 'marl_eval' in args.command:
+    elif  args.command == 'marl_eval':
 
         
         import warnings
@@ -99,6 +101,27 @@ if __name__ == "__main__":
         print('Evaluating RL model with config:', args.config)
         print('Loading model from:', args.model_dir)
         eval(args.config,args.model_dir,args.runs)
+
+    elif args.command == 'marl_eval_belief':
+
+        
+        import warnings
+        os.environ["XDG_RUNTIME_DIR"] = "/tmp"
+        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
+
+        from evals.marl.eval import eval
+
+        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
+                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
+                              'excludes': ['.git/',]
+                              } ) #,
+                # _temp_dir="/nvme1/ray_tmp")
+
+        print('Evaluating RL model with config:', args.config)
+        print('Loading model from:', args.model_dir)
+        eval(args.config,args.model_dir,args.runs,args.belief_dir,args.belief_config)
 
     elif 'marl_collect_data' == args.command:
 
@@ -140,6 +163,21 @@ if __name__ == "__main__":
             print('Loading model from:', args.model_dir)
 
             eval(args.config,args.model_dir)
+
+    elif 'ic3_train' in args.command:
+
+        from learn.marl.train_IC3Net import train
+
+        print('Training IC3Net model with config:', args.config)
+        train(args.config)
+
+    elif 'ic3_eval' in args.command:
+
+        from evals.marl.eval_IC3Net import eval
+
+        print('Evaluating IC3Net model with config:', args.config)
+        print('Loading model from:', args.model_dir)
+        eval(args.config,args.model_dir,args.runs)
 
     #config_dir = args.config if args.config else 'confs/usv_configs/3b_game.yaml'
     

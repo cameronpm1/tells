@@ -31,8 +31,7 @@ def seed(cfg):
     if cfg.if_cuda:
         torch.cuda.manual_seed(cfg.seed)
 
-
-def eval(
+def load_model(
     config_dir: str,
     ckpt_dir: str,
 ):
@@ -59,6 +58,15 @@ def eval(
 
     model.eval()
     model.freeze()
+
+    return model
+
+def eval(
+    config_dir: str,
+    ckpt_dir: str,
+):
+    
+    model = load_model(config_dir, ckpt_dir)
 
     trainer = Trainer(deterministic=True,
                       default_root_dir=log_dir,
