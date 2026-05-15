@@ -337,16 +337,22 @@ def build_ic3_command(cfg, qmodel_path, dataset_path, root_dir, ic3net_dir):
     if ic3.get("load_qmodel", False):
         cmd.extend(["--load_qmodel", str(qmodel_path)])
 
-    if ic3.get("pretrain_data", "") or dataset_path is not None:
-        pretrain_data_path = ic3.get("pretrain_data", None)
-        if pretrain_data_path is None or pretrain_data_path == "":
-            pretrain_data_path = dataset_path
-        if pretrain_data_path:
-            cmd.extend(["--pretrain_data", str(pretrain_data_path)])
-            cmd.extend(["--pretrain_epochs", str(ic3.get("pretrain_epochs", 0))])
-            cmd.extend(["--pretrain_batch_size", str(ic3.get("pretrain_batch_size", 256))])
-            cmd.extend(["--pretrain_lr", str(ic3.get("pretrain_lr", 0.001))])
-            cmd.extend(["--pretrain_value_coef", str(ic3.get("pretrain_value_coef", 0.05))])
+    pretrain_data_cfg = ic3.get("pretrain_data", None)
+
+    if isinstance(pretrain_data_cfg, bool):
+        pretrain_data_path = dataset_path if pretrain_data_cfg else None
+    else:
+        pretrain_data_path = pretrain_data_cfg
+
+    if pretrain_data_path is None or pretrain_data_path == "":
+        pretrain_data_path = dataset_path
+
+    if pretrain_data_path:
+        cmd.extend(["--pretrain_data", str(pretrain_data_path)])
+        cmd.extend(["--pretrain_epochs", str(ic3.get("pretrain_epochs", 0))])
+        cmd.extend(["--pretrain_batch_size", str(ic3.get("pretrain_batch_size", 256))])
+        cmd.extend(["--pretrain_lr", str(ic3.get("pretrain_lr", 0.001))])
+        cmd.extend(["--pretrain_value_coef", str(ic3.get("pretrain_value_coef", 0.05))])
 
     cmd.extend([
         "--save", str(save_path),
