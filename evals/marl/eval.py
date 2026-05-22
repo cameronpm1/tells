@@ -1,18 +1,61 @@
 import os
-import ray
 import torch
+import json
+import copy
 import numpy as np
 
-from ray.rllib.policy.policy import Policy
-from ray.tune.registry import register_env
-from ray.rllib.algorithms.ppo import PPOConfig
-
-from evals.belief.eval import load_model
 from envs.marl.make_env import make_marl_env
-from envs.marl.rllib_wrapper import RLLibWrapper
-from learn.marl.train import make_ray_config, marl_policy_mapping_fn
-from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
+from learn.marl.train import make_ray_config, marl_policy_mapping_fn, _build_algorithm, _format_policy_action
+from util.util import mkdir, load_config, save_rgb_gif
 
+
+def _lab_logs_fallback(path: str) -> str | None:
+    if path.startswith('logs' + os.sep):
+        candidate = os.path.join('lab-logs', path[len('logs' + os.sep):])
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+def _resolve_eval_paths(config_dir: str, checkpoint_dir: str | None) -> tuple[str, str | None]:
+    if checkpoint_dir is not None and not os.path.exists(checkpoint_dir):
+        fallback = _lab_logs_fallback(checkpoint_dir)
+        if fallback is not None:
+            print(f'Checkpoint path not found, using synced lab path: {fallback}')
+            checkpoint_dir = fallback
+
+    if not os.path.exists(config_dir):
+        candidates = []
+        if checkpoint_dir is not None:
+            candidates.append(os.path.join(os.path.dirname(checkpoint_dir), 'config.yaml'))
+        fallback = _lab_logs_fallback(config_dir)
+        if fallback is not None:
+            candidates.append(fallback)
+
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                print(f'Config path not found, using: {candidate}')
+                config_dir = candidate
+                break
+
+    if not os.path.exists(config_dir):
+        raise FileNotFoundError(
+            f'Config file not found: {config_dir}. Pass the run config.yaml, or put the run under logs/ or lab-logs/.'
+        )
+    if checkpoint_dir is not None and not os.path.exists(checkpoint_dir):
+        raise FileNotFoundError(
+            f'Checkpoint directory not found: {checkpoint_dir}. Pass an existing checkpoint directory.'
+        )
+    return os.path.abspath(config_dir), os.path.abspath(checkpoint_dir) if checkpoint_dir else None
+
+def _eval_config(cfg: dict) -> dict:
+    cfg = copy.deepcopy(cfg)
+    # Rendering only needs the local policy. Building the full training worker
+    # pool here wastes time and can exhaust PyBullet physics connections.
+    cfg['alg']['nenvs'] = 0
+    cfg['alg']['cpu_envs'] = 1
+    cfg['alg']['num_cpus_for_main_process'] = 1
+    cfg['alg']['num_cpus_per_env_runner'] = 1
+    return cfg
 
 def eval(
         config_dir:str,
@@ -36,6 +79,8 @@ def eval(
     '''
 
     if belief_dir is not None:
+        from evals.belief.eval import load_model
+
         belief = True
         belief_model = load_model(
             config_dir=belief_config_dir,
@@ -44,7 +89,8 @@ def eval(
     else:
         belief = False
 
-    cfg = load_config(config_dir)
+    config_dir, checkpoint_dir = _resolve_eval_paths(config_dir, checkpoint_dir)
+    cfg = _eval_config(load_config(config_dir))
 
     env = make_marl_env(
         cfg,
@@ -56,7 +102,7 @@ def eval(
 
     if checkpoint_dir is not None:
         algo_config = make_ray_config(cfg)
-        algo = algo_config.build_algo()
+        algo = _build_algorithm(algo_config, logger_creator=None)
         algo.restore(checkpoint_dir)
     else:
         print('No model directory provided...')
@@ -65,24 +111,28 @@ def eval(
     save_dir = os.path.join(checkpoint_dir,'videos')
     mkdir(save_dir)
 
-    for i in range(n_runs):
-        if belief:
-            eval_single_episode_belief(
-                env=env,
-                cfg=cfg,
-                algo=algo,
-                belief_model=belief_model,
-                save_dir=save_dir,
-                idx=i,
-            )
-        else:
-            eval_single_episode(
-                env=env,
-                cfg=cfg,
-                algo=algo,
-                save_dir=save_dir,
-                idx=i
-            )
+    try:
+        for i in range(n_runs):
+            if belief:
+                eval_single_episode_belief(
+                    env=env,
+                    cfg=cfg,
+                    algo=algo,
+                    belief_model=belief_model,
+                    save_dir=save_dir,
+                    idx=i,
+                )
+            else:
+                eval_single_episode(
+                    env=env,
+                    cfg=cfg,
+                    algo=algo,
+                    save_dir=save_dir,
+                    idx=i
+                )
+    finally:
+        env.close()
+        algo.stop()
 
 def eval_single_episode(
         env,
@@ -112,6 +162,7 @@ def eval_single_episode(
 
     episode_rewards = []
     episode_lengths = []
+    episode_metrics = []
     images = []
 
     obs, _ = env.reset()
@@ -122,6 +173,7 @@ def eval_single_episode(
 
     policy_list = cfg['policy_list']
     policy_mapping_fn = marl_policy_mapping_fn
+    action_space = algo.get_policy(policy_list[0]).action_space
 
     while not done["__all__"]:
 
@@ -134,9 +186,17 @@ def eval_single_episode(
                 policy_id=policy_mapping_fn(agent_id, 0), 
                 explore=False
             )
-            actions[agent_id] = action
+            actions[agent_id] = _format_policy_action(action, action_space)
 
         obs, rewards, terminations, truncations, infos = env.step(actions)
+        first_agent = cfg['env']['learned_agent_list'][0]
+        step_info = infos.get(first_agent, {})
+        if step_info:
+            episode_metrics.append({
+                key: float(value)
+                for key, value in step_info.items()
+                if isinstance(value, (bool, int, float, np.bool_, np.integer, np.floating))
+            })
 
         done = {
             "__all__": terminations["__all__"] or truncations["__all__"]
@@ -159,6 +219,22 @@ def eval_single_episode(
     print("\n==== EVAL RESULTS ====")
     print(f"Reward: {episode_rewards[-1]}")
     print(f"Length: {episode_lengths[-1]}")
+    if episode_metrics:
+        target_dists = [m['target_goal_dist'] for m in episode_metrics if 'target_goal_dist' in m]
+        hold_steps = [m.get('hold_steps', 0.0) for m in episode_metrics]
+        summary = {
+            'reward': float(episode_rewards[-1]),
+            'length': int(episode_lengths[-1]),
+            'best_target_goal_dist': float(min(target_dists)) if target_dists else None,
+            'final_target_goal_dist': float(target_dists[-1]) if target_dists else None,
+            'max_hold_steps': int(max(hold_steps)) if hold_steps else 0,
+            'success': bool(max(m.get('success', 0.0) for m in episode_metrics)),
+            'final_metrics': episode_metrics[-1],
+        }
+        summary_file = str(os.path.join(save_dir, str(idx) + '_metrics.json'))
+        with open(summary_file, 'w') as fp:
+            json.dump(summary, fp, indent=2)
+        print(f"Metrics: {summary_file}")
 
 
 def eval_single_episode_belief(

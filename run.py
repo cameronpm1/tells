@@ -2,6 +2,51 @@ import os
 import ray
 import torch
 import argparse
+import subprocess
+from pathlib import Path
+
+def set_torch_threads(default: int = 9):
+    torch.set_num_threads(int(os.environ.get('TELL_TORCH_THREADS', default)))
+
+def ensure_pybullet_drones_source():
+    repo_root = Path(__file__).resolve().parent
+    submodule_dir = repo_root / 'external' / 'pybullet-drones'
+    package_dir = submodule_dir / 'gym_pybullet_drones'
+    pinned_commit = '90b178aba69b09085dd70e7a1e88bb58ca00b4c9'
+
+    if package_dir.exists():
+        return
+
+    if (repo_root / '.git').exists():
+        subprocess.run(
+            ['git', 'submodule', 'update', '--init', '--recursive', 'external/pybullet-drones'],
+            cwd=repo_root,
+            check=True,
+        )
+        if package_dir.exists():
+            return
+
+    if submodule_dir.exists() and not any(submodule_dir.iterdir()):
+        submodule_dir.rmdir()
+    if not submodule_dir.exists():
+        submodule_dir.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ['git', 'clone', 'https://github.com/utiasDSL/gym-pybullet-drones.git', str(submodule_dir)],
+            cwd=repo_root,
+            check=True,
+        )
+        subprocess.run(
+            ['git', '-C', str(submodule_dir), 'checkout', pinned_commit],
+            cwd=repo_root,
+            check=True,
+        )
+
+    if not package_dir.exists():
+        raise RuntimeError(
+            'Could not find gym_pybullet_drones. Run '
+            '`git submodule update --init --recursive external/pybullet-drones` '
+            'or allow this script to clone the submodule fallback.'
+        )
 
 if __name__ == "__main__":
 
@@ -20,7 +65,7 @@ if __name__ == "__main__":
         print('ERROR: No config file provided')
     elif args.command == 'rl_train':
 
-        torch.set_num_threads(9)
+        set_torch_threads()
         from learn.rl.train import train
 
         print('Training RL model with config:', args.config)
@@ -32,7 +77,7 @@ if __name__ == "__main__":
             exit()
         else:
 
-            torch.set_num_threads(9)
+            set_torch_threads()
             from evals.rl.eval import eval
 
             print('Evaluating RL model with config:', args.config)
@@ -46,7 +91,7 @@ if __name__ == "__main__":
             exit()
         else:
 
-            torch.set_num_threads(9)
+            set_torch_threads()
             from evals.rl.collect_eval_data import collect_data
 
             if args.save_dir is None:
@@ -67,16 +112,21 @@ if __name__ == "__main__":
         os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
+        set_torch_threads()
+        ensure_pybullet_drones_source()
 
         from learn.marl.train import train
 
-        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
-                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
-                              'excludes': ['.git/',]
-                              },
-                 _temp_dir="/nvme0/ray_tmp",
-                 _system_config={
-                 "object_spilling_config": '{"type":"filesystem","params":{"directory_path":"/nvme0/ray_spill"}}'})
+        ray_kwargs = {
+            'runtime_env': {
+                'working_dir': os.getcwd(),
+                'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
+                'excludes': ['.git/', '.venv/', 'logs/', 'lab-logs/', 'uv.lock', '__pycache__/', '**/__pycache__/', '*.pyc', '.DS_Store'],
+            },
+        }
+        if os.environ.get('RAY_TMPDIR'):
+            ray_kwargs['_temp_dir'] = os.environ['RAY_TMPDIR']
+        ray.init(**ray_kwargs)
 
         print('Training marl policies with config:', args.config)
         train(args.config)
@@ -89,14 +139,21 @@ if __name__ == "__main__":
         os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
+        set_torch_threads()
+        ensure_pybullet_drones_source()
 
         from evals.marl.eval import eval
 
-        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
-                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
-                              'excludes': ['.git/',]
-                              } ) #,
-                # _temp_dir="/nvme1/ray_tmp")
+        ray_kwargs = {
+            'runtime_env': {
+                'working_dir': os.getcwd(),
+                'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
+                'excludes': ['.git/', '.venv/', 'logs/', 'lab-logs/', 'uv.lock', '__pycache__/', '**/__pycache__/', '*.pyc', '.DS_Store'],
+            },
+        }
+        if os.environ.get('RAY_TMPDIR'):
+            ray_kwargs['_temp_dir'] = os.environ['RAY_TMPDIR']
+        ray.init(**ray_kwargs)
 
         print('Evaluating RL model with config:', args.config)
         print('Loading model from:', args.model_dir)
@@ -110,14 +167,15 @@ if __name__ == "__main__":
         os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
+        set_torch_threads()
+        ensure_pybullet_drones_source()
 
         from evals.marl.eval import eval
 
-        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
+        ray.init(runtime_env={'working_dir': os.getcwd(),
                               'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
-                              'excludes': ['.git/',]
-                              } ) #,
-                # _temp_dir="/nvme1/ray_tmp")
+                              'excludes': ['.git/', '.venv/', 'logs/', 'lab-logs/', 'uv.lock', '__pycache__/', '**/__pycache__/', '*.pyc', '.DS_Store']
+                              } )
 
         print('Evaluating RL model with config:', args.config)
         print('Loading model from:', args.model_dir)
@@ -130,7 +188,7 @@ if __name__ == "__main__":
             exit()
         else:
 
-            torch.set_num_threads(9)
+            set_torch_threads()
             from evals.marl.collect_eval_data import collect_data
 
             if args.save_dir is None:

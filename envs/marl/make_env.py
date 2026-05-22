@@ -1,12 +1,11 @@
 import yaml
 import numpy
+import sys
 from typing import Optional
-from gym_pybullet_drones.utils.enums import ActionType
+from pathlib import Path
 
-from envs.marl.drones_env import DronesEnv
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.IC3Net_wrapper import IC3NetWrapper
-from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
 
 def make_marl_env(
         config: dict,
@@ -60,6 +59,7 @@ def make_predator_prey_env(
     wrap:bool
         if True wraps env in rllib wrapper
     '''
+    from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
 
     scenario_kwargs = config['env']['scenario_kwargs']
     scenario_kwargs['agent_list'] = config['env']['agent_list']
@@ -105,14 +105,32 @@ def make_drones_env(
     wrap:bool
         if True wraps env in rllib wrapper
     '''
+    pybullet_drones_path = Path(__file__).resolve().parents[2] / "external" / "pybullet-drones"
+    if pybullet_drones_path.exists() and str(pybullet_drones_path) not in sys.path:
+        sys.path.insert(0, str(pybullet_drones_path))
+
+    from gym_pybullet_drones.utils.enums import ActionType
+    from envs.marl.drones_env import DronesEnv
+
+    env_kwargs = dict(config['env']['env_kwargs'])
+    ctrl_freq = int(env_kwargs.get('ctrl_freq', 30))
+    episode_len_sec = env_kwargs.pop(
+        'episode_len_sec',
+        float(config['env']['max_episode_length']) / float(ctrl_freq),
+    )
 
     env = DronesEnv(
         agent_list=config['env']['agent_list'],
         learned_agent_list=config['env']['learned_agent_list'],
+        reward_kwargs=config['env'].get('reward_kwargs'),
+        controller_kwargs=config['env'].get('controller_kwargs'),
         gui=False,
         act=ActionType.VEL,
-        episode_len_sec=config['env']['max_episode_length']*config['timestep'], # 10Hz step rate
-        **config['env']['env_kwargs'],
+        # PyBullet-drones measures episode length in seconds; our config keeps
+        # the old RL convention where max_episode_length means control steps.
+        episode_len_sec=episode_len_sec,
+        seed=seed,
+        **env_kwargs,
     )
 
     if wrap == 'rllib':

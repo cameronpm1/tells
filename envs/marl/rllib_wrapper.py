@@ -1,10 +1,4 @@
-import time
-import gymnasium
-import numpy as np
 from copy import deepcopy
-from gymnasium import spaces
-from collections import OrderedDict
-from typing import Any, Dict, Type, Optional, Union
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 
@@ -54,17 +48,13 @@ class RLLibWrapper(MultiAgentEnv):
         return self.single_action_spaces[agent]
     
     def step(self, action_dict):
-
-        terminated_all = False
-        truncated_all = False
-
-        obs,rew,terminated,truncated,_ = self.env.step(action_dict)
+        obs,rew,terminated,truncated,raw_infos = self.env.step(action_dict)
         rew = dict(rew)
-
-        if self.eval:
-            infos = {'target': obs['target']}
-        else:
-            infos = {}
+        raw_infos = raw_infos if isinstance(raw_infos, dict) else {}
+        infos = {
+            agent: dict(raw_infos.get(agent, {}))
+            for agent in self.agents
+        }
 
         obs.pop("target", None)
         rew.pop('target', None)
@@ -100,7 +90,9 @@ class RLLibWrapper(MultiAgentEnv):
         return obs,infos
     
     def close(self):
-        self.env.unwrapped.close()
+        close_fn = getattr(self.env, 'close', None)
+        if close_fn is not None:
+            close_fn()
 
     def render_rgb(self):
         return self.env.render_rgb()
