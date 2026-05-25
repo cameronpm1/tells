@@ -3,26 +3,57 @@ import sys
 import torch
 import numpy as np
 from types import SimpleNamespace
+try:
+    from inspect import getargspec
+except:
+    print('Cannot import inspect in eval_IC3Net')
 
 from pathlib import Path
 
-IC3NET_REPO = '/home/cameron/external/IC3Net'
+IC3NET_REPO = '/home/cameron/tells/external/IC3Net'
 sys.path.insert(0, str(IC3NET_REPO))
 
-from external.IC3Net.utils import *
+# Also ensure top-level `utils` module from the IC3Net repo is importable
+sys.path.insert(0, '/home/cameron/tells/external/IC3Net')
+
+from utils import *
 from envs.marl.make_env import make_marl_env
-from external.IC3Net.models import RNN as PolicyNet
+from external.IC3Net.models import RNN as RNNPolicy
+from external.IC3Net.comm import CommNetMLP
+from external.IC3Net.action_utils import select_action, translate_action
 from util.util import mkdir, load_config, save_argb_video, save_rgb_gif
 
 
 def make_ic3net_args(env, hid_size=256, rnn_type="LSTM"):
+    num_actions = env.num_actions
+    if isinstance(num_actions, int):
+        num_actions = [num_actions]
+    elif isinstance(num_actions, np.ndarray):
+        num_actions = num_actions.tolist()
+
+    naction_heads = num_actions
+
     return SimpleNamespace(
         nagents=env.nagents,
         hid_size=hid_size,
         continuous=False,
         dim_actions=env.dim_actions,
-        naction_heads=[env.num_actions],
+        num_actions=num_actions,
+        naction_heads=naction_heads,
         rnn_type=rnn_type,
+        # CommNet / IC3Net defaults used by original implementations
+        comm_passes=1,
+        recurrent=True,
+        batch_size=1,
+        share_weights=False,
+        comm_init='uniform',
+        comm_mask_zero=False,
+        hard_attn=True,
+        commnet=True,
+        comm_action_one=False,
+        comm_mode='avg',
+        mean_ratio=0,
+        advantages_per_action=False,
     )
 
 def eval(
@@ -40,15 +71,28 @@ def eval(
         render_mode='rgb_array',
     )
 
-    model = load_ic3net_policy(checkpoint_dir, env)
+    args = make_ic3net_args(env)
+    model = load_ic3net_policy(checkpoint_dir, env, args)
 
-def load_ic3net_policy(checkpoint_path, env, device="cpu"):
+    # run n_runs episodes and save gifs under model_dir/videos
+    # If checkpoint_dir is a file path, save videos next to the file (its parent dir)
+    if os.path.isfile(checkpoint_dir):
+        base_dir = os.path.dirname(checkpoint_dir)
+    else:
+        base_dir = checkpoint_dir
+    save_dir = os.path.join(base_dir, 'videos')
+    mkdir(save_dir)
+
+    for i in range(n_runs):
+        eval_single_episode(env=env, cfg=cfg, args=args, algo=model, save_dir=save_dir, idx=i)
+
+def load_ic3net_policy(checkpoint_path, env, args, device="cpu"):
     device = torch.device(device)
 
-    policy_net = PolicyNet(
-        make_ic3net_args(env),
-        num_inputs=env.num_inputs,
-    ).to(device)
+    # Choose policy class based on checkpoint contents (supports older CommNet checkpoints)
+    # Default to RNNPolicy unless checkpoint looks like CommNet
+    # We'll instantiate a placeholder for now and replace after inspecting state_dict
+    # Load checkpoint first to inspect keys
 
     checkpoint = torch.load(
         checkpoint_path,
@@ -69,6 +113,28 @@ def load_ic3net_policy(checkpoint_path, env, device="cpu"):
     else:
         raise TypeError(f"Unexpected checkpoint type: {type(checkpoint)}")
 
+    # Heuristic: if checkpoint contains 'encoder' or 'C_modules' keys, it's CommNetMLP
+    state_keys = set(k for k in state_dict.keys())
+    if any(k.startswith('encoder') or k.startswith('C_modules') or k.startswith('f_module') for k in state_keys):
+        # If there are multiple heads saved (heads.<i>), infer their output sizes
+        head_keys = [k for k in state_dict.keys() if k.startswith('heads.')]
+        if head_keys:
+            # collect indices
+            head_indices = set(int(k.split('.')[1]) for k in head_keys)
+            naction_heads = []
+            for i in sorted(head_indices):
+                wkey = f'heads.{i}.weight'
+                if wkey in state_dict:
+                    out_dim = state_dict[wkey].shape[0]
+                else:
+                    out_dim = env.num_actions
+                naction_heads.append(out_dim)
+            args.naction_heads = naction_heads
+
+        policy_net = CommNetMLP(args, env.num_inputs).to(device)
+    else:
+        policy_net = RNNPolicy(args, num_inputs=env.num_inputs).to(device)
+
     policy_net.load_state_dict(state_dict)
 
     policy_net.eval()
@@ -77,6 +143,7 @@ def load_ic3net_policy(checkpoint_path, env, device="cpu"):
 def eval_single_episode(
     env,
     cfg: dict,
+    args,
     algo,
     save_dir: str = "",
     idx: int = 0,
@@ -86,50 +153,102 @@ def eval_single_episode(
     episode_lengths = []
     images = []
 
-
     algo.eval()
-    obs = env.reset()
+    reset_args = getargspec(env.reset).args
+    if 'epoch' in reset_args:
+        state = env.reset(0)
+    else:
+        state = env.reset()
+
     done = False
     step_count = 0
     nagents = len(cfg['policy_list'])
 
-    total_reward = 0.0
-    last_info = {}
+    total_reward = np.zeros(nagents, dtype=np.float64)
+    stat = dict()
+    info = {}
+
+    # initialize prev hidden state like Trainer.get_episode
+    prev_hid = torch.zeros(1, args.nagents, args.hid_size)
 
     frame = env.render_rgb()
     images.append(frame)
 
     while not done:
-        with torch.no_grad():
-            out = policy_net(obs)
-            print(out)
-            if isinstance(out, tuple):
-                out = out[0]
+        misc = dict()
+        if step_count == 0 and getattr(args, 'hard_attn', False) and getattr(args, 'commnet', False):
+            info['comm_action'] = np.zeros(args.nagents, dtype=int)
 
-            # assumes output logits: (1, nagents, num_actions)
-            actions = torch.argmax(out, dim=-1)
+        if getattr(args, 'recurrent', False):
+            if args.rnn_type == 'LSTM' and step_count == 0:
+                prev_hid = algo.init_hidden(batch_size=state.shape[0])
 
-        obs, rewards, done, info = env.step(actions)
+            x = [state, prev_hid]
+            output = algo(x, info)
+        else:
+            x = state
+            output = algo(x, info)
+
+        if isinstance(output, tuple):
+            action_out = output[0]
+            if len(output) > 2:
+                ret = output[2]
+            else:
+                ret = None
+        else:
+            action_out = output
+            ret = None
+
+        action = select_action(args, action_out)
+        action, actual = translate_action(args, env, action)
+
+        if ret is not None:
+            prev_hid = ret
+
+        next_state, rewards, done, info = env.step(actual)
+
+        if getattr(args, 'hard_attn', False) and getattr(args, 'commnet', False):
+            info['comm_action'] = action[-1] if not args.comm_action_one else np.ones(args.nagents, dtype=int)
+            nfriendly = getattr(args, 'nfriendly', args.nagents)
+            stat['comm_action'] = stat.get('comm_action', 0) + info['comm_action'][:nfriendly]
+            if getattr(args, 'enemy_comm', False):
+                stat['enemy_comm'] = stat.get('enemy_comm', 0) + info['comm_action'][nfriendly:]
 
         rewards = np.asarray(rewards, dtype=np.float64).reshape(-1)
-
-        total_reward += np.sum(rewards)
+        total_reward += rewards
         step_count += 1
-        last_info = info
 
-        episode_rewards.append(total_reward)
+        if 'alive_mask' in info:
+            misc['alive_mask'] = info['alive_mask'].reshape(rewards.shape)
+        else:
+            misc['alive_mask'] = np.ones_like(rewards)
+
+        nfriendly = getattr(args, 'nfriendly', args.nagents)
+        stat['reward'] = stat.get('reward', 0) + rewards[:nfriendly]
+        if getattr(args, 'enemy_comm', False):
+            stat['enemy_reward'] = stat.get('enemy_reward', 0) + rewards[nfriendly:]
+
+        max_steps = getattr(args, 'max_steps', getattr(env, 'max_steps', 400))
+        done = done or step_count == max_steps
+
+        episode_rewards.append(total_reward.copy())
         episode_lengths.append(step_count)
 
         frame = env.render_rgb()
         images.append(frame)
 
-    save_file = str(os.path.join(save_dir,str(idx)+'.gif'))
+        state = next_state
+        if done:
+            break
+
+    save_file = str(os.path.join(save_dir, str(idx) + '.gif'))
     print('generating video in ' + save_file)
-    save_rgb_gif(images,save_file)
+    save_rgb_gif(images, save_file)
 
     print("\n==== EVAL RESULTS ====")
-    print(f"Reward: {episode_rewards[-1]}")
-    print(f"Length: {episode_lengths[-1]}")
+    print(f"Per-agent Reward: {total_reward}")
+    print(f"Mean reward per agent: {np.mean(total_reward)}")
+    print(f"Length: {step_count}")
 
 
 def _compute_ic3net_actions(algo, obs, env, cfg=None, action_fn=None, device=None):

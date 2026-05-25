@@ -376,7 +376,7 @@ def train(config_path: str, kwargs=None):
 
 def make_ray_config(
     cfg: dict,
-    wrapper: Optional[str] = 'rllib',
+    wrapper: Optional[str] = 'pf',
 ):
     '''
     takes loaded config and returns ray config file for tarining rl
@@ -390,6 +390,9 @@ def make_ray_config(
     ------
     ray_config class
     '''
+
+    belief_kwargs = {}
+
     #make env function 
     def env_maker(config):
 
@@ -397,15 +400,6 @@ def make_ray_config(
 
         if config is not None:
             seed += ((1000*config.worker_index + config.vector_index))   
-        
-        if cfg.get('belief_config_dir') is not None:
-            belief_kwargs = {
-                'on': True,
-                'model': load_model(
-                    config_dir=cfg.get('belief_config_dir'),
-                    ckpt_dir=cfg.get('belief_dir'),
-                )
-            }
 
             env = make_marl_env(cfg,seed=int(seed),wrap=wrapper,belief_kwargs=belief_kwargs)
         else:
@@ -519,7 +513,9 @@ def make_ray_config(
             .framework("torch")
             .env_runners(num_env_runners=cfg['alg']['nenvs'], #20
                         num_envs_per_env_runner=cfg['alg']['cpu_envs'], #60
-                        num_cpus_per_env_runner=1
+                        num_cpus_per_env_runner=1,
+                        sample_timeout_s=120,
+                        rollout_fragment_length=256,
                         )
             .resources(num_gpus=cfg['alg'].get('num_gpus', 0))
             .multi_agent(policy_mapping_fn=policy_mapping_fn,

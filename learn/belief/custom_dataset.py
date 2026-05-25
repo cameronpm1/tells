@@ -1,4 +1,5 @@
 import os
+import time
 import json
 import numpy as np
 from pathlib import Path
@@ -66,6 +67,8 @@ class CustomDataset(Dataset):
         if not Path(filelist_path).exists():
             split_data('data/', name=self.data_name, seed=self.seed)
 
+        time.sleep(5)
+
         with open(filelist_path, 'r') as file:
             seq_dict = json.load(file)
         
@@ -115,12 +118,12 @@ class CustomDataset(Dataset):
         #print(type(datapoint[str(agent_name)][0]))
 
 
-        xy_pairs = np.array(datapoint['target_true']).flatten().reshape(-1, 2)  
-        last_pos = xy_pairs[-1:]   
-        data_rel = xy_pairs - last_pos
+        xy_pairs = np.array(datapoint['target_true']).flatten()
+        last_pos = xy_pairs[-2:]   
+        data_rel = xy_pairs - np.tile(last_pos,22)
 
-        label = np.array(datapoint['team_true']).flatten().reshape(-1, 2)  
-        label_rel = label - last_pos
+        label = np.array(datapoint['team_true']).flatten()  
+        label_rel = label - np.tile(last_pos,4)
 
         return torch.from_numpy(data_rel.flatten()).to(torch.float32), torch.from_numpy(label_rel.flatten()).to(torch.float32)
         

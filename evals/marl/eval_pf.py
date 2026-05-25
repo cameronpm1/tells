@@ -37,19 +37,10 @@ def eval(
     cfg = load_config(config_dir)
     belief_kwargs = {}
 
-    if belief_dir is not None:
-        belief_kwargs['on'] = True
-        belief_kwargs['model'] = load_model(
-            config_dir=belief_config_dir,
-            ckpt_dir=belief_dir,
-        )
-    else:
-        belief_kwargs['on'] = False
-
     env = make_marl_env(
         cfg,
         seed=cfg['seed'],
-        wrap='rllib',
+        wrap='pf',
         render_mode='rgb_array',
         belief_kwargs=belief_kwargs,
     )

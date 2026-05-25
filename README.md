@@ -147,8 +147,40 @@ python run.py --command belief_eval --model_dir /home/cameron/tells/logs/belief/
 
 - To edit model architecture/loss function see models.py inside learn/belief
 
+## Testing Policy with a Belief Model
+
+```bash
+python run.py --command marl_eval_belief --belief_dir /home/cameron/tells/logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config /home/cameron/tells/confs/belief/test1.yaml --config /home/cameron/tells/confs/predator_prey/3a_game.yaml --model_dir /home/cameron/tells/logs/marl/ppo_bc_ex/checkpoint4500/
+```
+
+## Training a Belief Model with a Policy
+
+```bash
+python run.py --command marl_train_belief --belief_dir /home/cameron/tells/logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config /home/cameron/tells/confs/belief/test1.yaml --config /home/cameron/tells/confs/predator_prey/3a_game.yaml
+```
+
+## Baselines
+
+### Test Particle Filter
+
+```bash
+python run.py --command pf_eval --model_dir /home/cameron/tells/logs/marl/ppo_bc/checkpoint2000 --config  /home/cameron/tells/confs/predator_prey/3a_game.yaml
+```
+
+### Train IC3Net
+
+```bash
+source .venv_ic3net/bin/activate
+```
+
+```bash
+python run.py --command ic3_train --config /home/cameron/tells/confs/predator_prey/3a_game_ic3.yaml
+```
+
 ---
 
 ## Notes
 - Designed for experimentation in decentralized, communication-restricted coordination tasks  
 - Modular structure allows extension to additional scenarios and agent behaviors  
+
+

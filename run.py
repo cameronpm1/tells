@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
             collect_data(args.config, args.model_dir, save_dir, n_runs=args.runs, n_workers=args.n_workers)
 
-    elif 'marl_train' in args.command:
+    elif args.command == 'marl_train':
 
         
         import warnings
@@ -123,6 +123,33 @@ if __name__ == "__main__":
         print('Loading model from:', args.model_dir)
         eval(args.config,args.model_dir,args.runs,args.belief_dir,args.belief_config)
 
+    elif args.command == 'marl_train_belief':
+
+        
+        import warnings
+        os.environ["XDG_RUNTIME_DIR"] = "/tmp"
+        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
+
+        from learn.marl.train import train
+
+        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
+                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
+                              'excludes': ['.git/',]
+                              } ) #,
+                # _temp_dir="/nvme1/ray_tmp")
+
+        print('Training RL model with config:', args.config)
+        print('Loading model from:', args.model_dir)
+
+        kwargs = {
+            'belief_config_dir': args.belief_config,
+            'belief_dir' : args.belief_dir
+        }
+
+        train(args.config,kwargs=kwargs)
+
     elif 'marl_collect_data' == args.command:
 
         if args.model_dir is None:
@@ -163,6 +190,22 @@ if __name__ == "__main__":
             print('Loading model from:', args.model_dir)
 
             eval(args.config,args.model_dir)
+
+    elif 'pf_eval' == args.command:
+
+        from evals.marl.eval_pf import eval
+
+        print('Evaluating PF model with config:', args.config)
+        print('Loading model from:', args.model_dir)
+        eval(args.config,args.model_dir,args.runs)
+
+    elif 'pf_train' == args.command:
+
+        from learn.marl.train_pf import train
+
+        print('Evaluating PF model with config:', args.config)
+        print('Loading model from:', args.model_dir)
+        train(args.config,{})
 
     elif 'ic3_train' in args.command:
 

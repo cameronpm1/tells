@@ -4,7 +4,7 @@ import numpy as np
 from copy import deepcopy
 from itertools import permutations
 from typing import Optional
-from gymnasium import spaces
+from gymnasium import spaces 
 
 from mpe2._mpe_utils.core import World
 from mpe2._mpe_utils.core import Agent, Landmark
@@ -159,7 +159,7 @@ class PredatorPreyEnv(gymnasium.Env):
         self.prev_target_goal_dist = metrics['target_goal_dist']
         self.last_metrics = metrics
 
-        obs.pop('target', None)
+        
         return self.obs, {a: {} for a in self.agents}
 
     def get_obs(self):
@@ -247,6 +247,13 @@ class PredatorPreyEnv(gymnasium.Env):
             return 0
 
         return action
+
+    def get_agent_position(self, agent_name: str):
+        """Return the current 2D position of the named agent."""
+        world = self.env.unwrapped.world
+        agent = next((a for a in world.agents if a.name == agent_name), None)
+
+        return agent.state.p_pos.copy()
 
     def compute_team_metrics(self):
         world = self.env.unwrapped.world

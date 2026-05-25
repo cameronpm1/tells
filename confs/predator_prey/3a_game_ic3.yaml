@@ -1,8 +1,8 @@
-seed: &seed 22 # set experiment seed
+seed: &seed 10 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
 min_obs: 20
-logdir: logs/marl/ic3_test16
+logdir: logs/marl/ic3_test23
 notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 ic3net_dir: external/IC3Net
@@ -27,8 +27,8 @@ ic3:
   comm_passes: 1
   seed: 0
   save_every: 100
-  save_path: logs/marl/ic3_test16/ic3net_from_ppo_qmodel.pt
-  log_path: logs/marl/ic3_test16/ic3net_from_ppo_qmodel.log
+  save_path: logs/marl/ic3_test23/ic3net_from_ppo_qmodel.pt
+  log_path: logs/marl/ic3_test23/ic3net_from_ppo_qmodel.log
   load_qmodel: true
   pretrain_data: true
   pretrain_epochs: 10

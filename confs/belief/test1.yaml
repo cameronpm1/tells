@@ -3,17 +3,17 @@ seed: 2
 if_cuda: True
 gamma: 0.5
 log_dir: 'logs/belief/'
-label: 'ppotest7'
+label: 'ppo_bc_test6'
 train_batch: 256
 val_batch: 256
 test_batch: 256
 num_workers: 15
 num_gpus: 1
 model_name: 'NN'
-input_channels: 40
-output_channels: 4
+input_channels: 44
+output_channels: 8
 data_dir: 'data/'
-data_name: 'ppotest1'
+data_name: 'ppo_bc_noisierinject'
 lr_schedule: []
 epochs: 1000
 

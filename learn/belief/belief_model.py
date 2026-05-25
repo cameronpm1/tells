@@ -240,6 +240,7 @@ class BeliefModel(pl.LightningModule):
         #self.model = NN2CNN(self.hparams.input_channels,self.hparams.output_channels)
         self.model = NN(self.hparams.input_channels,self.hparams.output_channels)
         self.loss_func = PermutationInvariantMSE() #torch.nn.MSELoss()
+        self.val_loss_func = WeightedPermutationInvariantMSE()
 
     def train_forward(self, x):
         output = self.model(x)
@@ -258,7 +259,7 @@ class BeliefModel(pl.LightningModule):
         data, target, filepath = batch
         output = self.train_forward(data)
 
-        val_loss = self.loss_func(output,target)
+        val_loss = self.val_loss_func(output,target)
         self.log('val_loss', val_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
         return val_loss
@@ -271,8 +272,8 @@ class BeliefModel(pl.LightningModule):
 
         output = self.model(data)
         #avg_error = np.sum(np.linalg.norm(output.detach().cpu().numpy() - target.squeeze().detach().cpu().numpy(),axis=1))/len(data)
-        avg_error = self.loss_func.error(output.detach().cpu().numpy(), target.squeeze().detach().cpu().numpy()) / len(data)
-        test_loss = self.loss_func(output,target.squeeze())
+        avg_error = self.val_loss_func.error(output.detach().cpu().numpy(), target.squeeze().detach().cpu().numpy()) / len(data)
+        test_loss = self.val_loss_func(output,target.squeeze())
         self.log('avg_error', avg_error, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         self.log('test_loss', test_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         self.all_predictions.extend(output.detach().cpu().numpy())
