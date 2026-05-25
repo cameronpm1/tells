@@ -1,29 +1,29 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 0.5
 horizon: &horizon 10 #10
-logdir: logs/marl/drones_ppo_bc_3d_4000_constspeed_fullobs
-notes: Fresh 3D drone herding run with exact full observations, constant pursuer speed, and high-parallel PPO
+logdir: logs/marl/drones_ppo_bc_3d_goaldrive_v2
+notes: Fresh 3D drone herding run biased harder toward actually driving and locking the prey at the goal
 
 alg:
   type : ppo
   lr : 0.00002
   gamma: 0.99
-  nenvs : 112
+  nenvs : 384
   cpu_envs: 1
-  num_cpus_per_env_runner: 1
-  num_cpus_for_main_process: 16
+  num_cpus_per_env_runner: 0.25
+  num_cpus_for_main_process: 24
   rollout_fragment_length: auto
   batch_mode: truncate_episodes
   sample_timeout_s: 120
   target_ent: 0.1
-  batch: 32768
+  batch: 65536
   batch_size: 256
   num_gpus: 0
-  pi : [256, 256, 256]
-  vf : [256, 256, 256]
+  pi : [512, 512, 512]
+  vf : [512, 512, 512]
   timesteps : 4000
-  checkpoint_freq: 25
-  minibatch_size: 4096
+  checkpoint_freq: 100
+  minibatch_size: 8192
   num_epochs: 5
   lambda: 0.95
   entropy_coeff: 0.0
@@ -39,7 +39,7 @@ alg:
     value_loss_coef: 0.02
     grad_clip: 1.0
     eval_runs: 8
-    workers: 48
+    workers: 96
     nenvs: 0
     cpu_envs: 1
 
@@ -54,32 +54,33 @@ env:
     base_altitude : 1.0
     speed_ratio : 0.4
     pursuer_speed_fraction: 0.8
-    target_force_threshold : 1.5
+    target_force_threshold : 0.9
     pursuer_spawn_min_radius: 1.0
     pursuer_spawn_max_radius: 2.2
     pursuer_same_spawn: true
     pursuer_same_spawn_jitter: 0.05
     target_spawn_radius: 1.6
+    spawn_altitude_jitter: 0.05
     goal_noise: 0.1
     global_observations: true
     role_conditioned_slots: true
   controller_kwargs:
     target_avoid_radius: 1.4
-    target_avoid_gain: 1.4
+    target_avoid_gain: 1.65
     force_exponent: 2.0
     altitude_gain: 0.35
   reward_kwargs:
-    distance_scale: 4.0
+    distance_scale: 7.0
     chase_scale: 0.25
-    progress_scale: 36.0
+    progress_scale: 52.0
     approach_scale: 3.0
     containment_scale: 5.0
-    coverage_scale: 13.0
-    slot_scale: 20.0
+    coverage_scale: 16.0
+    slot_scale: 14.0
     hold_scale: 80.0
     success_bonus: 2500.0
     oob_penalty: 7000.0
-    uncontrolled_goal_scale: 28.0
+    uncontrolled_goal_scale: 36.0
     touch_penalty_scale: 4.0
     altitude_scale: 1.0
     step_cost: 0.05
@@ -93,17 +94,23 @@ env:
     hold_ring_min: 0.05
     hold_slot_min: 0.05
     goal_center_radius: 1.6
-    goal_center_scale: 28.0
+    goal_center_scale: 44.0
     goal_lock_radius: 0.7
-    goal_lock_scale: 80.0
+    goal_lock_scale: 130.0
     success_hold_steps: 8
+    slot_far_distance: 1.75
+    slot_funnel_backoff: 1.55
+    slot_funnel_lateral: 1.1
+    slot_gather_distance: 1.2
+    slot_gather_backoff: 1.25
+    slot_gather_lateral: 0.95
     slot_switch_distance: 0.9
     slot_push_radius: 1.05
     slot_push_offset: 0.65
     slot_flank_radius: 0.85
     slot_goal_backoff: 0.55
     slot_goal_lateral: 0.75
-    slot_tolerance: 1.25
+    slot_tolerance: 1.05
     safe_target_radius: 0.18
 
 sim:

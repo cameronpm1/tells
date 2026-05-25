@@ -142,7 +142,7 @@ def _apply_alg_env_overrides(cfg: dict):
     overrides = {
         'TELL_NENVS': ('nenvs', int),
         'TELL_CPU_ENVS': ('cpu_envs', int),
-        'TELL_NUM_CPUS_PER_ENV_RUNNER': ('num_cpus_per_env_runner', int),
+        'TELL_NUM_CPUS_PER_ENV_RUNNER': ('num_cpus_per_env_runner', float),
         'TELL_NUM_CPUS_FOR_MAIN_PROCESS': ('num_cpus_for_main_process', int),
         'TELL_BATCH': ('batch', int),
         'TELL_MINIBATCH_SIZE': ('minibatch_size', int),

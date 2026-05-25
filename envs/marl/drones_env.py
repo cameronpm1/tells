@@ -46,6 +46,7 @@ class DronesEnv(BaseRLAviary):
         pursuer_same_spawn: bool = True,
         pursuer_same_spawn_jitter: float = 0.05,
         target_spawn_radius: float = 1.6,
+        spawn_altitude_jitter: float = 0.05,
         goal_noise: float = 0.1,
         global_observations: bool = False,
         role_conditioned_slots: bool = False,
@@ -82,6 +83,7 @@ class DronesEnv(BaseRLAviary):
         self.pursuer_same_spawn = bool(pursuer_same_spawn)
         self.pursuer_same_spawn_jitter = float(pursuer_same_spawn_jitter)
         self.target_spawn_radius = float(target_spawn_radius)
+        self.spawn_altitude_jitter = float(spawn_altitude_jitter)
         self.goal_noise = float(goal_noise)
         self.global_observations = bool(global_observations)
         self.role_conditioned_slots = bool(role_conditioned_slots)
@@ -122,6 +124,12 @@ class DronesEnv(BaseRLAviary):
             'goal_lock_radius': 0.25,
             'goal_lock_scale': 32.0,
             'success_hold_steps': 8,
+            'slot_far_distance': 1.75,
+            'slot_funnel_backoff': 1.55,
+            'slot_funnel_lateral': 1.10,
+            'slot_gather_distance': 1.20,
+            'slot_gather_backoff': 1.25,
+            'slot_gather_lateral': 0.95,
             'slot_switch_distance': 0.9,
             'slot_push_radius': 1.05,
             'slot_push_offset': 0.65,
@@ -227,12 +235,25 @@ class DronesEnv(BaseRLAviary):
                 role_angle = (2.0 * np.pi * i) / max(self.num_pursuers, 1)
                 role_hint = np.array([np.cos(role_angle), np.sin(role_angle)], dtype=np.float32)
                 target_goal_dist = float(np.linalg.norm(self.GOAL_POS - positions[self.target_idx]))
+                pursuer_positions = np.asarray(positions[: self.num_pursuers], dtype=np.float32)
+                pursuer_target_vecs = pursuer_positions - positions[self.target_idx]
+                pursuer_target_vecs[:, 2] = 0.0
+                avg_pursuer_dist = float(
+                    np.mean(
+                        np.linalg.norm(
+                            pursuer_target_vecs,
+                            axis=1,
+                        )
+                    )
+                )
                 role_slots = self.compute_slots(
                     positions[self.target_idx],
                     self.GOAL_POS.astype(np.float32),
                     target_goal_dist,
+                    avg_pursuer_target_dist=avg_pursuer_dist,
                 )
-                role_slot_rel = role_slots[i % len(role_slots)] - own_pos
+                role_slots = self.assign_slots(pursuer_positions, role_slots)
+                role_slot_rel = role_slots[i] - own_pos
                 role_obs = [
                     # Shared weights still need a tiny role hint, otherwise a
                     # same-spawn pack can collapse into identical actions.
@@ -391,7 +412,9 @@ class DronesEnv(BaseRLAviary):
 
         for i in range(self.num_pursuers):
             pursuer_pos = states[i][0:3]
+            # Match the 2D prey behavior: flee in XY, use Z only to stabilize altitude.
             diff = target_pos - pursuer_pos
+            diff[2] = 0.0
             dist = np.linalg.norm(diff) + 1e-6
             local_gain = 1.0
             if dist < self.controller_cfg['target_avoid_radius']:
@@ -495,8 +518,13 @@ class DronesEnv(BaseRLAviary):
 
         goal_vec = goal_pos - target_pos
         target_goal_dist = float(np.linalg.norm(goal_vec))
+        goal_vec_xy = goal_vec.copy()
+        goal_vec_xy[2] = 0.0
+        target_goal_planar_dist = float(np.linalg.norm(goal_vec_xy))
         pursuer_target_vecs = pursuer_positions - target_pos
-        pursuer_target_dists = np.linalg.norm(pursuer_target_vecs, axis=1)
+        pursuer_target_vecs_xy = pursuer_target_vecs.copy()
+        pursuer_target_vecs_xy[:, 2] = 0.0
+        pursuer_target_dists = np.linalg.norm(pursuer_target_vecs_xy, axis=1)
 
         touch_penalty = float(
             np.mean(np.clip(self.reward_cfg['safe_target_radius'] - pursuer_target_dists, 0.0, None))
@@ -516,7 +544,7 @@ class DronesEnv(BaseRLAviary):
         coverage_score = 1.0
         if len(pursuer_target_vecs) > 1:
             # Keep the coverage check horizontal; vertical spacing gets noisy in PyBullet.
-            angles = np.sort(np.arctan2(pursuer_target_vecs[:, 1], pursuer_target_vecs[:, 0]))
+            angles = np.sort(np.arctan2(pursuer_target_vecs_xy[:, 1], pursuer_target_vecs_xy[:, 0]))
             wrapped_angles = np.concatenate((angles, [angles[0] + (2 * np.pi)]))
             gaps = np.diff(wrapped_angles)
             ideal_gap = (2 * np.pi) / len(pursuer_target_vecs)
@@ -530,10 +558,10 @@ class DronesEnv(BaseRLAviary):
                 )
             )
 
-        if target_goal_dist > 1e-6:
-            goal_dir = goal_vec / target_goal_dist
+        if target_goal_planar_dist > 1e-6:
+            goal_dir = goal_vec_xy / target_goal_planar_dist
             alignments = []
-            for pursuer_vec, pursuer_dist in zip(pursuer_target_vecs, pursuer_target_dists):
+            for pursuer_vec, pursuer_dist in zip(pursuer_target_vecs_xy, pursuer_target_dists):
                 if pursuer_dist < 1e-6:
                     alignments.append(1.0)
                     continue
@@ -585,6 +613,7 @@ class DronesEnv(BaseRLAviary):
 
         metrics = {
             'target_goal_dist': target_goal_dist,
+            'target_goal_planar_dist': target_goal_planar_dist,
             'ring_score': ring_score,
             'close_fraction': close_fraction,
             'coverage_score': coverage_score,
@@ -608,7 +637,17 @@ class DronesEnv(BaseRLAviary):
         return metrics
 
     def compute_slot_score(self, pursuer_positions, target_pos, goal_pos, target_goal_dist):
-        slots = self.compute_slots(target_pos, goal_pos, target_goal_dist)
+        pursuer_target_vecs = pursuer_positions - target_pos
+        pursuer_target_vecs[:, 2] = 0.0
+        avg_pursuer_dist = float(
+            np.mean(np.linalg.norm(pursuer_target_vecs, axis=1))
+        )
+        slots = self.compute_slots(
+            target_pos,
+            goal_pos,
+            target_goal_dist,
+            avg_pursuer_target_dist=avg_pursuer_dist,
+        )
         best_average_distance = np.inf
         for slot_perm in _permutations(range(len(slots))):
             distances = [
@@ -622,23 +661,78 @@ class DronesEnv(BaseRLAviary):
         score = float(np.exp(-best_average_distance / tolerance))
         return score, float(best_average_distance)
 
-    def compute_slots(self, target_pos, goal_pos, target_goal_dist):
+    def assign_slots(self, pursuer_positions, slots):
+        remaining_slots = [slot.copy() for slot in slots]
+        assigned_slots = []
+        for pursuer_pos in pursuer_positions:
+            slot_idx = int(
+                np.argmin(
+                    [np.linalg.norm(pursuer_pos - slot) for slot in remaining_slots]
+                )
+            )
+            assigned_slots.append(remaining_slots.pop(slot_idx))
+        return np.asarray(assigned_slots, dtype=np.float32)
+
+    def compute_slots(
+        self,
+        target_pos,
+        goal_pos,
+        target_goal_dist,
+        avg_pursuer_target_dist=None,
+    ):
         goal_vec = goal_pos - target_pos
         forward_xy = goal_vec[:2]
         forward_norm = np.linalg.norm(forward_xy)
+        goal_planar_dist = float(forward_norm)
         if forward_norm > 1e-6:
-            forward = np.array([forward_xy[0], forward_xy[1], 0.0], dtype=np.float32) / forward_norm
+            forward = (
+                np.array([forward_xy[0], forward_xy[1], 0.0], dtype=np.float32)
+                / forward_norm
+            )
         else:
             forward = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         lateral = np.array([-forward[1], forward[0], 0.0], dtype=np.float32)
 
-        if target_goal_dist > self.reward_cfg['slot_switch_distance']:
+        if (
+            avg_pursuer_target_dist is not None
+            and avg_pursuer_target_dist > self.reward_cfg['slot_far_distance']
+        ):
+            slots = np.array(
+                [
+                    target_pos - forward * self.reward_cfg['slot_funnel_backoff'],
+                    target_pos
+                    - forward * self.reward_cfg['slot_funnel_backoff']
+                    + lateral * self.reward_cfg['slot_funnel_lateral'],
+                    target_pos
+                    - forward * self.reward_cfg['slot_funnel_backoff']
+                    - lateral * self.reward_cfg['slot_funnel_lateral'],
+                ],
+                dtype=np.float32,
+            )
+        elif goal_planar_dist > self.reward_cfg['slot_gather_distance']:
+            slots = np.array(
+                [
+                    target_pos - forward * self.reward_cfg['slot_gather_backoff'],
+                    target_pos
+                    - forward * self.reward_cfg['slot_gather_backoff']
+                    + lateral * self.reward_cfg['slot_gather_lateral'],
+                    target_pos
+                    - forward * self.reward_cfg['slot_gather_backoff']
+                    - lateral * self.reward_cfg['slot_gather_lateral'],
+                ],
+                dtype=np.float32,
+            )
+        elif goal_planar_dist > self.reward_cfg['slot_switch_distance']:
             # Same idea as the 2D version: one pusher behind the target, two flanks.
             slots = np.array(
                 [
                     target_pos - forward * self.reward_cfg['slot_push_radius'],
-                    target_pos - forward * self.reward_cfg['slot_push_offset'] + lateral * self.reward_cfg['slot_flank_radius'],
-                    target_pos - forward * self.reward_cfg['slot_push_offset'] - lateral * self.reward_cfg['slot_flank_radius'],
+                    target_pos
+                    - forward * self.reward_cfg['slot_push_offset']
+                    + lateral * self.reward_cfg['slot_flank_radius'],
+                    target_pos
+                    - forward * self.reward_cfg['slot_push_offset']
+                    - lateral * self.reward_cfg['slot_flank_radius'],
                 ],
                 dtype=np.float32,
             )
@@ -669,8 +763,22 @@ class DronesEnv(BaseRLAviary):
             1.0,
         )
         containment_weight = 0.25 + (0.75 * near_goal_weight)
-        containment_score = 0.5 * (metrics['ring_score'] + metrics['close_fraction'])
-        coverage_score = metrics['coverage_score']
+        # Do not pay much for a loose blob around the prey. The last run found
+        # that local optimum, so this keeps formation reward for actual control.
+        containment_score = float(
+            np.clip(
+                (0.5 * (metrics['ring_score'] + metrics['close_fraction']) - 0.35) / 0.65,
+                0.0,
+                1.0,
+            )
+        )
+        coverage_score = float(
+            np.clip(
+                (metrics['coverage_score'] - 0.05) / 0.95,
+                0.0,
+                1.0,
+            )
+        )
         approach_score = metrics['push_alignment'] - 0.5
         control_score = metrics['control_score']
 
@@ -698,8 +806,8 @@ class DronesEnv(BaseRLAviary):
     def _sample_initial_xyzs(self, rng):
         xyzs = np.zeros((self.num_pursuers + 1, 3), dtype=np.float32)
 
-        z_min = max(0.3, self.base_altitude - 0.5)
-        z_max = self.base_altitude + 0.5
+        z_min = max(0.3, self.base_altitude - self.spawn_altitude_jitter)
+        z_max = self.base_altitude + self.spawn_altitude_jitter
 
         theta = rng.uniform(-np.pi, np.pi)
         radius = rng.uniform(0.0, self.target_spawn_radius)
@@ -763,8 +871,12 @@ class DronesEnv(BaseRLAviary):
         else:
             self.GOAL_POS = (
                 np.array([0.0, 0.0, self.base_altitude], dtype=np.float32)
-                + rng.uniform(-self.goal_noise, self.goal_noise, size=3).astype(np.float32)
             )
+            self.GOAL_POS[:2] += rng.uniform(
+                -self.goal_noise,
+                self.goal_noise,
+                size=2,
+            ).astype(np.float32)
 
         return xyzs
 
