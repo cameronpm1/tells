@@ -38,7 +38,7 @@ class DronesEnv(BaseRLAviary):
         capture_radius: float = 0.5,
         base_altitude: float = 1.0,
         speed_ratio: float = 0.4,
-        pursuer_speed_fraction: float = 0.8,
+        pursuer_speed_fraction: float = 1.5,
         episode_len_sec: int = 25,
         target_force_threshold: float = 1.5,
         pursuer_spawn_min_radius: float = 1.0,
@@ -182,17 +182,82 @@ class DronesEnv(BaseRLAviary):
 
         self.difficulty = 1.0
 
+        self.discrete_actions = {
+            0: np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+
+            # 1-8: horizontal plane, z = 0
+            1:  np.array([ 1.0,        0.0,        0.0, self.pursuer_speed_fraction], dtype=np.float32),
+            2:  np.array([ 1/np.sqrt(2),  1/np.sqrt(2),  0.0, self.pursuer_speed_fraction], dtype=np.float32),
+            3:  np.array([ 0.0,        1.0,        0.0, self.pursuer_speed_fraction], dtype=np.float32),
+            4:  np.array([-1/np.sqrt(2),  1/np.sqrt(2),  0.0, self.pursuer_speed_fraction], dtype=np.float32),
+            5:  np.array([-1.0,        0.0,        0.0, self.pursuer_speed_fraction], dtype=np.float32),
+            6:  np.array([-1/np.sqrt(2), -1/np.sqrt(2),  0.0, self.pursuer_speed_fraction], dtype=np.float32),
+            7:  np.array([ 0.0,       -1.0,        0.0, self.pursuer_speed_fraction], dtype=np.float32),
+            8:  np.array([ 1/np.sqrt(2), -1/np.sqrt(2),  0.0, self.pursuer_speed_fraction], dtype=np.float32),
+
+            # 9-16: +45 degree inclination, upward
+            9:  np.array([ 1/np.sqrt(2),  0.0,        1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            10: np.array([ 0.5,        0.5,        1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            11: np.array([ 0.0,        1/np.sqrt(2),  1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            12: np.array([-0.5,        0.5,        1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            13: np.array([-1/np.sqrt(2),  0.0,        1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            14: np.array([-0.5,       -0.5,        1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            15: np.array([ 0.0,       -1/np.sqrt(2),  1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            16: np.array([ 0.5,       -0.5,        1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+
+            # 17-24: -45 degree inclination, downward
+            17: np.array([ 1/np.sqrt(2),  0.0,       -1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            18: np.array([ 0.5,        0.5,       -1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            19: np.array([ 0.0,        1/np.sqrt(2), -1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            20: np.array([-0.5,        0.5,       -1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            21: np.array([-1/np.sqrt(2),  0.0,       -1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            22: np.array([-0.5,       -0.5,       -1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            23: np.array([ 0.0,       -1/np.sqrt(2), -1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+            24: np.array([ 0.5,       -0.5,       -1/np.sqrt(2), self.pursuer_speed_fraction], dtype=np.float32),
+
+            # 25-26: pure vertical motion
+            25: np.array([0.0, 0.0,  1.0, self.pursuer_speed_fraction], dtype=np.float32),
+            26: np.array([0.0, 0.0, -1.0, self.pursuer_speed_fraction], dtype=np.float32),
+        }
+
+    def vec_to_action_mapper(self, vector):
+        """
+        Returns the action index and unit vector closest in direction to the input vector.
+        """
+        v = np.asarray(vector, dtype=np.float32)
+
+        norm = np.linalg.norm(v)
+        if norm < 1e-8:
+            raise ValueError("Input vector has near-zero magnitude, cannot determine direction.")
+
+        v_unit = v / norm
+
+        best_action = None
+        best_score = -np.inf
+
+        for action_idx, action_vec in self.discrete_actions.items():
+            score = np.dot(v_unit, action_vec[0:3])
+
+            if score > best_score:
+                best_score = score
+                best_action = action_idx
+
+        return best_action, self.discrete_actions[best_action]
+
     def _action_space(self,agent):
         """
         Learner only controls pursuers.
         The target drone's action is injected internally.
         """
+        '''
         return spaces.Box(
             low=-1.0,
             high=1.0,
             shape=(3,),
             dtype=np.float32,
         )
+        '''
+        return spaces.Discrete(27)
 
     def _observation_space(self,agent):
 
@@ -228,60 +293,19 @@ class DronesEnv(BaseRLAviary):
             goal_rel = self.GOAL_POS - own_pos
 
             target_rel = positions[self.target_idx] - own_pos
-            target_abs = positions[self.target_idx]
-            target_vel = velocities[self.target_idx]
-            role_obs = []
-            if self.role_conditioned_slots:
-                role_angle = (2.0 * np.pi * i) / max(self.num_pursuers, 1)
-                role_hint = np.array([np.cos(role_angle), np.sin(role_angle)], dtype=np.float32)
-                target_goal_dist = float(np.linalg.norm(self.GOAL_POS - positions[self.target_idx]))
-                pursuer_positions = np.asarray(positions[: self.num_pursuers], dtype=np.float32)
-                pursuer_target_vecs = pursuer_positions - positions[self.target_idx]
-                pursuer_target_vecs[:, 2] = 0.0
-                avg_pursuer_dist = float(
-                    np.mean(
-                        np.linalg.norm(
-                            pursuer_target_vecs,
-                            axis=1,
-                        )
-                    )
-                )
-                role_slots = self.compute_slots(
-                    positions[self.target_idx],
-                    self.GOAL_POS.astype(np.float32),
-                    target_goal_dist,
-                    avg_pursuer_target_dist=avg_pursuer_dist,
-                )
-                role_slots = self.assign_slots(pursuer_positions, role_slots)
-                role_slot_rel = role_slots[i] - own_pos
-                role_obs = [
-                    # Shared weights still need a tiny role hint, otherwise a
-                    # same-spawn pack can collapse into identical actions.
-                    role_hint,
-                    role_slot_rel,
-                ]
-            other_abs = []
+
             other_rel = []
-            other_vel = []
             for j in range(self.num_pursuers):
                 if j == i:
                     continue
-                other_abs.append(positions[j])
                 other_rel.append(positions[j] - own_pos)
-                other_vel.append(velocities[j])
 
             obs_i = np.concatenate(
                 [
                     own_vel,
                     own_pos,
                     goal_rel,
-                    target_abs,
                     target_rel,
-                    target_vel,
-                    *other_abs,
-                    *other_vel,
-                    *global_obs,
-                    *role_obs,
                     *other_rel,
                 ]
             )
@@ -323,22 +347,13 @@ class DronesEnv(BaseRLAviary):
 
         action = []
         for agent in self.agents:
-            action.append(action_dict[agent])
+            action.append(self.discrete_actions[action_dict[agent]])
 
 
         action = np.asarray(action, dtype=np.float32)
 
-        if action.shape == (self.num_pursuers, 4):
-            action = action[:, :3]
-
-        if action.shape != (self.num_pursuers, 3):
-            raise ValueError(
-                f"Expected action shape {(self.num_pursuers, 3)}, got {action.shape}."
-            )
-
         full_action = np.zeros((self.NUM_DRONES, 4), dtype=np.float32)
-        full_action[: self.num_pursuers, :3] = np.clip(action, -1.0, 1.0)
-        full_action[: self.num_pursuers, 3] = self.pursuer_speed_fraction
+        full_action[: self.num_pursuers, :] = action
         full_action[self.target_idx, :] = self._scripted_target_action()
 
         obs, reward, terminated, truncated, info = super().step(full_action)
@@ -434,7 +449,7 @@ class DronesEnv(BaseRLAviary):
                 direction[0],
                 direction[1],
                 direction[2],
-                self.speed_ratio,
+                self.speed_ratio*self.pursuer_speed_fraction,
             ],
             dtype=np.float32,
         )
@@ -952,3 +967,4 @@ class DronesEnv(BaseRLAviary):
         rgb = rgba[:, :, :3].astype(np.uint8)
 
         return rgb
+

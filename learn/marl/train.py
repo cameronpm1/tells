@@ -20,11 +20,12 @@ from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.policy.policy import PolicySpec
 
 #from logger import getlogger
-from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
-from controllers.marl_slot_controller import compute_slot_actions
-from controllers.drone_slot_controller import compute_drone_slot_actions
 from learn.marl.callbacks import LogRawEpisodeReturn
+from util.util import mkdir, load_config, save_rgb_gif
+from controllers.drone_slot_controller import compute_drone_slot_actions
+from controllers.predator_prey_slot_controller import compute_slot_actions
+
 
 
 #logger = getlogger(__name__)
@@ -248,6 +249,59 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
 
     return _summarize_eval_rows(rows)
 
+def test_controller(config_path: str, runs: int = 10):
+
+    cfg = load_config(config_path)
+
+    save_dir = os.path.join(cfg['logdir'],'controller_videos')
+    mkdir(save_dir)
+
+    learned_agents = cfg['env']['learned_agent_list']
+    env = make_marl_env(
+        cfg,
+        seed=int(cfg['seed']),
+        wrap=None,
+    )
+
+    rew_sum = 0
+
+    try:
+        for i in range(runs):
+            obs, _ = env.reset()
+            trajectory = []
+            images = []
+
+            for _ in range(cfg['env']['max_episode_length']):
+                if 'drones' in cfg['env']['scenario']:
+                    expert_actions = compute_drone_slot_actions(env)
+                else:
+                    expert_actions = compute_slot_actions(env.env.unwrapped.world)
+                predator_obs = {
+                    agent: np.asarray(obs[agent], dtype=np.float32).copy()
+                    for agent in learned_agents
+                }
+                action_dict = {**expert_actions}
+                obs, rewards, terminations, truncations, _ = env.step(action_dict)
+                team_reward = float(rewards[learned_agents[0]])
+                trajectory.append((predator_obs, expert_actions, team_reward))
+                rew_sum += team_reward
+
+                if _episodes_done(terminations, truncations):
+                    break
+
+                images.append(env.render_rgb())
+
+            save_file = str(os.path.join(save_dir,str(i)+'.gif'))
+            print('generating video in ' + save_file)
+            save_rgb_gif(images,save_file)
+
+            print("\n==== EVAL RESULTS ====")
+            print(f"Reward: {rew_sum:.2f}")
+            print(f"Length: {len(images)}")
+
+    finally:
+        env.close()
+
 def _collect_slot_controller_episode(cfg: dict, episode_idx: int):
     obs_buf = []
     act_buf = []
@@ -260,6 +314,9 @@ def _collect_slot_controller_episode(cfg: dict, episode_idx: int):
         seed=int(cfg['seed']) + episode_idx,
         wrap=None,
     )
+
+    rew_sum = 0
+
     try:
         obs, _ = env.reset()
         trajectory = []
@@ -277,9 +334,11 @@ def _collect_slot_controller_episode(cfg: dict, episode_idx: int):
             obs, rewards, terminations, truncations, _ = env.step(action_dict)
             team_reward = float(rewards[learned_agents[0]])
             trajectory.append((predator_obs, expert_actions, team_reward))
+            rew_sum += team_reward
 
             if _episodes_done(terminations, truncations):
                 break
+
     finally:
         env.close()
 

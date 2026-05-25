@@ -237,6 +237,13 @@ if __name__ == "__main__":
         print('Loading model from:', args.model_dir)
         eval(args.config,args.model_dir,args.runs)
 
+    elif 'controller_eval' in args.command:
+
+        from learn.marl.train import test_controller
+
+        print('Evaluating controller with config:', args.config)
+        test_controller(args.config, args.runs)
+
     #config_dir = args.config if args.config else 'confs/usv_configs/3b_game.yaml'
     
     #train(config_dir)

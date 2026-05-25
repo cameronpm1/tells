@@ -1,29 +1,29 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 0.5
 horizon: &horizon 10 #10
-logdir: logs/marl/drones_ppo_bc_3d_goaldrive_v2
+logdir: logs/marl/dtest4
 notes: Fresh 3D drone herding run biased harder toward actually driving and locking the prey at the goal
 
 alg:
   type : ppo
   lr : 0.00002
   gamma: 0.99
-  nenvs : 384
-  cpu_envs: 1
+  nenvs : 2
+  cpu_envs: 8
   num_cpus_per_env_runner: 0.25
   num_cpus_for_main_process: 24
   rollout_fragment_length: auto
   batch_mode: truncate_episodes
   sample_timeout_s: 120
   target_ent: 0.1
-  batch: 65536
+  batch: 4096
   batch_size: 256
   num_gpus: 0
   pi : [512, 512, 512]
   vf : [512, 512, 512]
   timesteps : 4000
   checkpoint_freq: 100
-  minibatch_size: 8192
+  minibatch_size: 512
   num_epochs: 5
   lambda: 0.95
   entropy_coeff: 0.0
@@ -33,27 +33,27 @@ alg:
   pretrain:
     enabled: true
     episodes: 1800
-    epochs: 44
+    epochs: 48
     batch_size: 2048
     lr: 0.0005
     value_loss_coef: 0.02
     grad_clip: 1.0
     eval_runs: 8
-    workers: 96
+    workers: 100
     nenvs: 0
     cpu_envs: 1
 
 env:
   scenario: 3_agent_drones
-  max_episode_length: 400
+  max_episode_length: 600
   agent_list: ['target', 'agent0', 'agent1', 'agent2']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
   env_kwargs:
     grid_size : 3.0
     capture_radius : 0.45
     base_altitude : 1.0
-    speed_ratio : 0.4
-    pursuer_speed_fraction: 0.8
+    speed_ratio : 0.3
+    pursuer_speed_fraction: 1.5
     target_force_threshold : 0.9
     pursuer_spawn_min_radius: 1.0
     pursuer_spawn_max_radius: 2.2
@@ -66,7 +66,7 @@ env:
     role_conditioned_slots: true
   controller_kwargs:
     target_avoid_radius: 1.4
-    target_avoid_gain: 1.65
+    target_avoid_gain: 1.6
     force_exponent: 2.0
     altitude_gain: 0.35
   reward_kwargs:

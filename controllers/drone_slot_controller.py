@@ -1,18 +1,14 @@
 import numpy as np
 
-def vec_to_vel_action(vec: np.ndarray, deadzone: float = 0.04) -> np.ndarray:
+def vec_to_vel_action(vec: np.ndarray, env, deadzone: float = 0.2) -> np.ndarray:
     norm = float(np.linalg.norm(vec))
     if norm < deadzone:
-        return np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        return 0
     direction = vec / norm
-    return np.array(
-        [
-            np.clip(direction[0], -1.0, 1.0),
-            np.clip(direction[1], -1.0, 1.0),
-            np.clip(direction[2], -1.0, 1.0),
-        ],
-        dtype=np.float32,
-    )
+
+    action_disc, action_vec = env.vec_to_action_mapper(direction)
+
+    return action_disc
 
 
 def _assign_slots(pursuer_positions: np.ndarray, slots: np.ndarray) -> list[np.ndarray]:
@@ -53,5 +49,5 @@ def compute_drone_slot_actions(env) -> dict[str, np.ndarray]:
 
     actions = {}
     for idx, (agent, slot) in enumerate(zip(env.agents, assigned_slots)):
-        actions[agent] = vec_to_vel_action(slot - pursuer_positions[idx])
+        actions[agent] = vec_to_vel_action(slot - pursuer_positions[idx],env)
     return actions

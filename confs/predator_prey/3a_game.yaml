@@ -2,7 +2,7 @@ seed: &seed 24 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
 min_obs: 20
-logdir: logs/marl/ppotest15
+logdir: logs/marl/test
 notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 alg:
