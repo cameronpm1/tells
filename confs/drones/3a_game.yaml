@@ -1,7 +1,7 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 0.5
 horizon: &horizon 10 #10
-logdir: logs/marl/dtest4
+logdir: logs/marl/dtest5
 notes: Fresh 3D drone herding run biased harder toward actually driving and locking the prey at the goal
 
 alg:
