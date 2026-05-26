@@ -754,9 +754,9 @@ class DronesEnv(BaseRLAviary):
         else:
             slots = np.array(
                 [
-                    goal_pos - forward * self.reward_cfg['slot_goal_backoff'],
-                    goal_pos + lateral * self.reward_cfg['slot_goal_lateral'],
-                    goal_pos - lateral * self.reward_cfg['slot_goal_lateral'],
+                    target_pos - forward * self.reward_cfg['slot_goal_backoff'],
+                    target_pos + lateral * self.reward_cfg['slot_goal_lateral'],
+                    target_pos - lateral * self.reward_cfg['slot_goal_lateral'],
                 ],
                 dtype=np.float32,
             )

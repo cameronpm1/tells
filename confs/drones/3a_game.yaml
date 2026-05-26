@@ -1,8 +1,8 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 0.5
 horizon: &horizon 10 #10
-logdir: logs/marl/dtest5
-notes: Fresh 3D drone herding run biased harder toward actually driving and locking the prey at the goal
+logdir: logs/marl/dtest6
+notes: new controller params
 
 alg:
   type : ppo
@@ -45,7 +45,7 @@ alg:
 
 env:
   scenario: 3_agent_drones
-  max_episode_length: 600
+  max_episode_length: 800
   agent_list: ['target', 'agent0', 'agent1', 'agent2']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
   env_kwargs:
@@ -56,16 +56,16 @@ env:
     pursuer_speed_fraction: 1.5
     target_force_threshold : 0.9
     pursuer_spawn_min_radius: 1.0
-    pursuer_spawn_max_radius: 2.2
+    pursuer_spawn_max_radius: 2.0
     pursuer_same_spawn: true
     pursuer_same_spawn_jitter: 0.05
-    target_spawn_radius: 1.6
+    target_spawn_radius: 2.3
     spawn_altitude_jitter: 0.05
     goal_noise: 0.1
     global_observations: true
     role_conditioned_slots: true
   controller_kwargs:
-    target_avoid_radius: 1.4
+    target_avoid_radius: 0.5
     target_avoid_gain: 1.6
     force_exponent: 2.0
     altitude_gain: 0.35
@@ -105,11 +105,11 @@ env:
     slot_gather_backoff: 1.25
     slot_gather_lateral: 0.95
     slot_switch_distance: 0.9
-    slot_push_radius: 1.05
-    slot_push_offset: 0.65
-    slot_flank_radius: 0.85
-    slot_goal_backoff: 0.55
-    slot_goal_lateral: 0.75
+    slot_push_radius: 0.4
+    slot_push_offset: 0.3
+    slot_flank_radius: 0.4
+    slot_goal_backoff: 0.45
+    slot_goal_lateral: 0.35
     slot_tolerance: 1.05
     safe_target_radius: 0.18
 
