@@ -11,8 +11,16 @@ from mpe2._mpe_utils.core import Agent, Landmark
 from mpe2._mpe_utils.scenario import BaseScenario
 from mpe2._mpe_utils.simple_env import SimpleEnv, make_env
 from pettingzoo.utils.conversions import parallel_wrapper_fn
+from controllers.marl_slot_controller import compute_slot_actions
 
 GRID_SIZE = 10
+ACTION_TO_VECTOR = {
+    0: np.array([0.0, 0.0]),
+    1: np.array([-1.0, 0.0]),
+    2: np.array([1.0, 0.0]),
+    3: np.array([0.0, -1.0]),
+    4: np.array([0.0, 1.0]),
+}
 
 class PredatorPreyEnv(gymnasium.Env):
 
@@ -43,6 +51,7 @@ class PredatorPreyEnv(gymnasium.Env):
             'containment_scale': 2.0,
             'coverage_scale': 2.0,
             'slot_scale': 18.0,
+            'controller_action_scale': 2.0,
             'hold_scale': 20.0,
             'success_bonus': 750.0,
             'oob_penalty': 3000.0,
@@ -102,6 +111,7 @@ class PredatorPreyEnv(gymnasium.Env):
         filtered_actions = {}
         for agent_id, action in action_dict.items():
             filtered_actions[agent_id] = self.boundary_safe_action(agent_id, action)
+        controller_metrics = self.compute_controller_action_reward(filtered_actions)
         filtered_actions['target'] = self.boundary_safe_action(
             'target',
             self.adversary_action('target'),
@@ -111,6 +121,7 @@ class PredatorPreyEnv(gymnasium.Env):
         self.obs = obs
 
         metrics = self.compute_team_metrics()
+        metrics.update(controller_metrics)
         team_reward = self.compute_team_reward(metrics)
         for agent in self.agents:
             rewards[agent] = team_reward
@@ -409,6 +420,35 @@ class PredatorPreyEnv(gymnasium.Env):
             )
         )
 
+    def compute_controller_action_reward(self, action_dict: dict) -> dict:
+        controller_actions = compute_slot_actions(self.env.unwrapped.world)
+        action_errors = []
+
+        for agent in self.agents:
+            if agent not in action_dict or agent not in controller_actions:
+                continue
+
+            learned_action = int(action_dict[agent])
+            controller_action = self.boundary_safe_action(
+                agent,
+                int(controller_actions[agent]),
+            )
+            learned_vector = ACTION_TO_VECTOR.get(learned_action, ACTION_TO_VECTOR[0])
+            controller_vector = ACTION_TO_VECTOR.get(controller_action, ACTION_TO_VECTOR[0])
+            action_errors.append(
+                np.linalg.norm(learned_vector - controller_vector) / 2.0
+            )
+
+        if len(action_errors) == 0:
+            controller_action_error = 0.0
+        else:
+            controller_action_error = float(np.mean(action_errors))
+
+        return {
+            'controller_action_error': controller_action_error,
+            'controller_action_reward': -controller_action_error,
+        }
+
     def compute_team_reward(self, metrics: dict):
         if self.prev_target_goal_dist is None:
             progress = 0.0
@@ -429,6 +469,7 @@ class PredatorPreyEnv(gymnasium.Env):
         )
         coverage_score = max(metrics['coverage_score'] - 0.5, 0.0)
         approach_score = metrics['push_alignment'] - 0.5
+        controller_action_reward = metrics.get('controller_action_reward', 0.0)
         control_score = max(
             metrics['slot_score'],
             0.5 * (metrics['ring_score'] + metrics['close_fraction']),
@@ -441,6 +482,10 @@ class PredatorPreyEnv(gymnasium.Env):
             - (self.reward_cfg['touch_penalty_scale'] * metrics['touch_penalty'])
             + (self.reward_cfg['approach_scale'] * approach_score)
             + (self.reward_cfg['slot_scale'] * metrics['slot_score'])
+            + (
+                self.reward_cfg['controller_action_scale']
+                * controller_action_reward
+            )
             - (
                 self.reward_cfg['uncontrolled_goal_scale']
                 * near_goal_weight

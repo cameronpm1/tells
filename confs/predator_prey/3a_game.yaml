@@ -70,6 +70,7 @@ env:
     containment_scale: 2.0
     coverage_scale: 2.0
     slot_scale: 18.0
+    controller_action_scale: 2.0
     hold_scale: 20.0
     success_bonus: 750.0
     oob_penalty: 3000.0
