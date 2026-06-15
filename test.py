@@ -6,8 +6,8 @@ import gurobipy as gp
 
 from controllers.boat_mpc import boatMPC
 from util.util import mkdir, load_config
-from envs.marl.drones_env import DronesEnv
 from tells_environment_dynamics.test import *
+from envs.marl.drones_env import PredatorPreyAviary
 from envs.rl.make_envs import make_usv_game, make_usv_env
 from envs.marl.make_env import make_drones_env, make_predator_prey_env
 from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
@@ -197,7 +197,7 @@ def drone_test():
         # All zeros means commanded hover/no motion.
         action = {}
         for agent in env.agents:
-            action[agent] = np.zeros((4), dtype=np.float32)
+            action[agent] = np.zeros((3), dtype=np.float32)
 
         obs, reward, terminated, truncated, info = env.step(action)
 
@@ -222,4 +222,4 @@ if __name__ == "__main__":
     #gen_belief_img()
     #test_usv_game()
     #test_usv_env()
-    #drone_test()
+    drone_test()

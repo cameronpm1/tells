@@ -3,10 +3,10 @@ import numpy
 from typing import Optional
 from gym_pybullet_drones.utils.enums import ActionType
 
-from envs.marl.drones_env import DronesEnv
 from envs.marl.pf_wrapper import PFWrapper
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.IC3Net_wrapper import IC3NetWrapper
+from envs.marl.drones_env import PredatorPreyAviary
 from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
 
 def make_marl_env(
@@ -80,7 +80,7 @@ def make_predator_prey_env(
     )
 
     if wrap == 'rllib':
-        env = RLLibWrapper(env,eval,belief_kwargs)
+        env = RLLibWrapper(env,'predator_prey',eval,belief_kwargs)
     elif wrap == 'ic3net':
         env = IC3NetWrapper(env)
     elif wrap == 'pf':
@@ -109,17 +109,17 @@ def make_drones_env(
         if True wraps env in rllib wrapper
     '''
 
-    env = DronesEnv(
+    env = PredatorPreyAviary(
         agent_list=config['env']['agent_list'],
         learned_agent_list=config['env']['learned_agent_list'],
         gui=False,
         act=ActionType.VEL,
-        episode_len_sec=config['env']['max_episode_length']*config['timestep'], # 10Hz step rate
+        max_episode_length=config['env']['max_episode_length']*config['timestep'], # 10Hz step rate
         **config['env']['env_kwargs'],
     )
 
     if wrap == 'rllib':
-        env = RLLibWrapper(env,eval,belief_kwargs)
+        env = RLLibWrapper(env,'drones',eval,belief_kwargs)
     elif wrap == 'ic3net':
         env = IC3NetWrapper(env)
     

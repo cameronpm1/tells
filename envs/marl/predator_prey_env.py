@@ -33,6 +33,7 @@ class PredatorPreyEnv(gymnasium.Env):
         self.env = mpeEnv
         self.env.reset(seed=seed)
         self.agents = agents
+        self.n_agents = len(agents)
         self.local_observations = local_observations
         self.env.unwrapped.local_observations = local_observations
         self.reward_cfg = {
@@ -86,6 +87,12 @@ class PredatorPreyEnv(gymnasium.Env):
         self.hold_steps = 0
         self.prev_target_goal_dist = None
         self.last_metrics = {}
+
+        self.obs_map = {
+            'self': slice(0, 4),
+            'target': slice(4, 8),
+            'team': slice(8, 8 + 2 * (len(self.agents) - 1)),
+        }
 
     def _observation_space(self, agent):
         return self.env.observation_space(agent)
@@ -773,27 +780,39 @@ class PredatorPreyScenario(BaseScenario):
     def observation(self, agent, world):
         # ADD NOISE TO OBSERVATIONS OF OTHER AGENTS
 
-        obs = []
+        obs = {}
 
-        obs.append(agent.state.p_vel)
-        obs.append(agent.state.p_pos)
+        vel = agent.state.p_vel
+        pos = agent.state.p_pos
 
         for landmark in world.landmarks:
-            obs.append(landmark.state.p_pos - agent.state.p_pos)
+            goal = landmark.state.p_pos - pos
 
+        obs['self'] = np.concatenate((vel, pos))
+
+        rel_positions = []
         for other in world.agents:
-            if other is agent or (self.local_observations and 'agent' in other.name):
+            if other.adversary:
+                obs['target'] = np.concatenate((goal, other.state.p_pos - pos))
+            elif other is agent:
                 continue
-                #obs.append(other.state.p_pos)
-            obs.append(other.state.p_pos - agent.state.p_pos)
+            else:
+                rel_positions.append(other.state.p_pos - pos)
 
+        obs['team'] = np.array(rel_positions).flatten()
+
+        
         predator_names = [name for name in self.agents if 'agent' in name]
         agent_id = np.zeros(len(predator_names), dtype=np.float32)
         if agent.name in predator_names:
             agent_id[predator_names.index(agent.name)] = 1.0
-        obs.append(agent_id)
 
-        return np.concatenate(obs)
+        obs['other'] = agent_id
+
+        obs = np.concatenate((obs['self'], obs['target'], obs['team'], obs['other']))
+    
+        return obs
+    
 
 
 env = make_env(ScenarioEnv)

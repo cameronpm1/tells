@@ -153,7 +153,7 @@ python run.py --command belief_eval --model_dir /home/cameron/tells/logs/belief/
 python run.py --command marl_eval_belief --belief_dir /home/cameron/tells/logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config /home/cameron/tells/confs/belief/test1.yaml --config /home/cameron/tells/confs/predator_prey/3a_game.yaml --model_dir /home/cameron/tells/logs/marl/ppo_bc_ex/checkpoint4500/
 ```
 
-## Training a Belief Model with a Policy
+## Training a Policy with a Belief Model
 
 ```bash
 python run.py --command marl_train_belief --belief_dir /home/cameron/tells/logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config /home/cameron/tells/confs/belief/test1.yaml --config /home/cameron/tells/confs/predator_prey/3a_game.yaml
