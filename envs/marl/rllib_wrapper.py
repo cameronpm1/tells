@@ -67,13 +67,16 @@ class RLLibWrapper(MultiAgentEnv):
         terminated_all = False
         truncated_all = False
 
-        obs,rew,terminated,truncated,_ = self.env.step(action_dict)
+        obs,rew,terminated,truncated,env_infos = self.env.step(action_dict)
         rew = dict(rew)
 
         if self.eval:
             infos = {'target': obs['target']}
         else:
             infos = {}
+
+        for agent in self.agents:
+            infos[agent] = dict(env_infos.get(agent, {}))
 
         obs.pop("target", None)
         rew.pop('target', None)
@@ -222,7 +225,6 @@ class RLLibWrapper(MultiAgentEnv):
 
         # Take minimum per sample, then sum batch
         return np.minimum(direct, swapped).sum()
-
 
 
 

@@ -48,12 +48,12 @@ class PredatorPreyEnv(gymnasium.Env):
             'chase_scale': 2.0,
             'progress_scale': 16.0,
             'approach_scale': 2.5,
-            'containment_scale': 2.0,
-            'coverage_scale': 2.0,
             'slot_scale': 18.0,
             'controller_action_scale': 2.0,
+            'formation_scale': 12.0,
+            'hold_readiness_scale': 18.0,
             'hold_scale': 20.0,
-            'success_bonus': 750.0,
+            'success_bonus': 5000.0,
             'oob_penalty': 3000.0,
             'uncontrolled_goal_scale': 12.0,
             'touch_penalty_scale': 3.0,
@@ -74,6 +74,7 @@ class PredatorPreyEnv(gymnasium.Env):
             'slot_goal_backoff': 1.20,
             'slot_goal_lateral': 1.25,
             'slot_tolerance': 0.85,
+            'slot_score_temp': 2.0,
         }
         if reward_kwargs is not None:
             self.reward_cfg.update(reward_kwargs)
@@ -412,17 +413,13 @@ class PredatorPreyEnv(gymnasium.Env):
             ]
             best_average_distance = min(best_average_distance, float(np.mean(distances)))
 
-        return float(
-            np.clip(
-                1.0 - (best_average_distance / self.reward_cfg['slot_tolerance']),
-                0.0,
-                1.0,
-            )
-        )
+        slot_score_temp = max(float(self.reward_cfg['slot_score_temp']), 1e-6)
+        return float(np.exp(-best_average_distance / slot_score_temp))
 
     def compute_controller_action_reward(self, action_dict: dict) -> dict:
         controller_actions = compute_slot_actions(self.env.unwrapped.world)
         action_errors = []
+        action_matches = []
 
         for agent in self.agents:
             if agent not in action_dict or agent not in controller_actions:
@@ -438,15 +435,66 @@ class PredatorPreyEnv(gymnasium.Env):
             action_errors.append(
                 np.linalg.norm(learned_vector - controller_vector) / 2.0
             )
+            action_matches.append(float(learned_action == controller_action))
 
         if len(action_errors) == 0:
             controller_action_error = 0.0
+            controller_action_match = 0.0
         else:
             controller_action_error = float(np.mean(action_errors))
+            controller_action_match = float(np.mean(action_matches))
 
         return {
             'controller_action_error': controller_action_error,
-            'controller_action_reward': -controller_action_error,
+            'controller_action_match': controller_action_match,
+            'controller_action_reward': 1.0 - (2.0 * controller_action_error),
+        }
+
+    def compute_curriculum_reward_terms(self, metrics: dict) -> dict:
+        goal_readiness = float(
+            np.exp(
+                -metrics['target_goal_dist']
+                / max(self.reward_cfg['hold_goal_radius'], 1e-6)
+            )
+        )
+        coverage_readiness = float(
+            np.clip(
+                metrics['coverage_score']
+                / max(self.reward_cfg['hold_coverage_min'], 1e-6),
+                0.0,
+                1.0,
+            )
+        )
+        ring_readiness = float(
+            np.clip(
+                metrics['ring_score'] / max(self.reward_cfg['hold_ring_min'], 1e-6),
+                0.0,
+                1.0,
+            )
+        )
+        close_readiness = float(
+            np.clip(
+                metrics['close_fraction']
+                / max(self.reward_cfg['hold_close_fraction'], 1e-6),
+                0.0,
+                1.0,
+            )
+        )
+        formation_score = coverage_readiness * ring_readiness * close_readiness
+        hold_readiness_bonus = goal_readiness * formation_score
+
+        return {
+            'goal_readiness': goal_readiness,
+            'coverage_readiness': coverage_readiness,
+            'ring_readiness': ring_readiness,
+            'close_readiness': close_readiness,
+            'formation_score': formation_score,
+            'hold_readiness_bonus': hold_readiness_bonus,
+            'control_score': 0.5 * (metrics['slot_score'] + formation_score),
+            'curriculum_reward': (
+                self.reward_cfg['formation_scale'] * formation_score
+                + self.reward_cfg['hold_readiness_scale'] * hold_readiness_bonus
+            ),
         }
 
     def compute_team_reward(self, metrics: dict):
@@ -456,24 +504,16 @@ class PredatorPreyEnv(gymnasium.Env):
             progress = self.prev_target_goal_dist - metrics['target_goal_dist']
         self.prev_target_goal_dist = metrics['target_goal_dist']
 
-        near_goal_weight = float(
-            np.exp(-metrics['target_goal_dist'] / self.reward_cfg['goal_focus_temp'])
-        )
         hold_fraction = min(
             metrics['hold_steps'] / max(float(self.reward_cfg['success_hold_steps']), 1.0),
             1.0,
         )
-        containment_weight = 0.25 + (0.75 * near_goal_weight)
-        containment_score = (
-            metrics['ring_score'] + metrics['close_fraction'] - 1.0
-        )
-        coverage_score = max(metrics['coverage_score'] - 0.5, 0.0)
         approach_score = metrics['push_alignment'] - 0.5
         controller_action_reward = metrics.get('controller_action_reward', 0.0)
-        control_score = max(
-            metrics['slot_score'],
-            0.5 * (metrics['ring_score'] + metrics['close_fraction']),
-        )
+        curriculum_terms = self.compute_curriculum_reward_terms(metrics)
+        formation_score = curriculum_terms['formation_score']
+        metrics['progress'] = progress
+        metrics.update(curriculum_terms)
 
         team_reward = (
             (self.reward_cfg['progress_scale'] * progress)
@@ -486,20 +526,11 @@ class PredatorPreyEnv(gymnasium.Env):
                 self.reward_cfg['controller_action_scale']
                 * controller_action_reward
             )
+            + curriculum_terms['curriculum_reward']
             - (
                 self.reward_cfg['uncontrolled_goal_scale']
-                * near_goal_weight
-                * (1.0 - control_score)
-            )
-            + (
-                self.reward_cfg['containment_scale']
-                * containment_weight
-                * containment_score
-            )
-            + (
-                self.reward_cfg['coverage_scale']
-                * containment_weight
-                * coverage_score
+                * curriculum_terms['goal_readiness']
+                * (1.0 - formation_score)
             )
             - self.reward_cfg['step_cost']
         )
