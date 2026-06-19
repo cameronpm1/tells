@@ -58,7 +58,6 @@ class PredatorPreyEnv(gymnasium.Env):
             'uncontrolled_goal_scale': 12.0,
             'touch_penalty_scale': 3.0,
             'step_cost': 0.05,
-            'goal_focus_temp': 1.0,
             'surround_radius': 1.8,
             'ideal_radius': 1.5,
             'radius_tolerance': 0.55,
@@ -73,7 +72,6 @@ class PredatorPreyEnv(gymnasium.Env):
             'slot_flank_radius': 1.65,
             'slot_goal_backoff': 1.20,
             'slot_goal_lateral': 1.25,
-            'slot_tolerance': 0.85,
             'slot_score_temp': 2.0,
         }
         if reward_kwargs is not None:
@@ -289,7 +287,7 @@ class PredatorPreyEnv(gymnasium.Env):
         ring_score = float(
             np.mean(
                 np.clip(
-                    1.0 - radius_error / self.reward_cfg['radius_tolerance'], #something like this?
+                    1.0 - radius_error / self.reward_cfg['radius_tolerance'],
                     0.0,
                     1.0,
                 )

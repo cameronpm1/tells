@@ -77,7 +77,6 @@ env:
     uncontrolled_goal_scale: 5.0
     touch_penalty_scale: 3.0
     step_cost: 0.05
-    goal_focus_temp: 1.0
     surround_radius: 2.4
     ideal_radius: 2.0
     radius_tolerance: 0.7
@@ -92,7 +91,6 @@ env:
     slot_flank_radius: 1.65
     slot_goal_backoff: 1.2
     slot_goal_lateral: 1.25
-    slot_tolerance: 0.85
     slot_score_temp: 2.0
 
 sim:

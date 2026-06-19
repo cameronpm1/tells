@@ -1,5 +1,10 @@
 .venv/
 .venv_ic3net/
 logs/
+lab-logs/
 data/
 __pycache__/
+*.pyc
+.ray/
+.pytest_cache/
+uv.lock

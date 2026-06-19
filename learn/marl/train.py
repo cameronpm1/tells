@@ -90,6 +90,22 @@ def _save_checkpoint(algo, checkpoint_dir: str):
         shutil.rmtree(checkpoint_dir)
     algo.save(checkpoint_dir=checkpoint_dir)
 
+def _build_algo(algo_config, logger_creator=None):
+    try:
+        return algo_config.build_algo(logger_creator=logger_creator)
+    except TypeError as exc:
+        if 'logger_creator' not in str(exc):
+            raise
+        print('RLlib build_algo does not accept logger_creator; using default logger.')
+        return algo_config.build_algo()
+
+def _deep_update(base: dict, updates: dict):
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_update(base[key], value)
+        else:
+            base[key] = value
+
 def _episodes_done(terminations: dict, truncations: dict) -> bool:
     return all(bool(v) for v in terminations.values()) or all(bool(v) for v in truncations.values())
 
@@ -307,11 +323,11 @@ def _maybe_pretrain_policy(algo, cfg: dict, logdir: str) -> bool:
 def train(config_path: str, kwargs=None):
 
     cfg = load_config(config_path)
+    if kwargs is not None:
+        _deep_update(cfg, kwargs)
+
     logdir = os.path.abspath(cfg['logdir'])
     cfg['logdir'] = logdir
-    if kwargs is not None:
-        for key, value in kwargs.items():
-            cfg[key] = value
     if not os.path.exists(logdir):
         print('Save directory not found, creating path ...')
         #logger.info("Save directory not found, creating path ...")
@@ -332,7 +348,7 @@ def train(config_path: str, kwargs=None):
 
     algo_config = make_ray_config(cfg)
 
-    algo_build = algo_config.build_algo(logger_creator=logger_creator)
+    algo_build = _build_algo(algo_config, logger_creator=logger_creator)
 
     resume_dir, resume_iter = _find_latest_checkpoint(logdir)
     start_iter = 0

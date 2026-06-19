@@ -1,9 +1,7 @@
 import yaml
 import numpy
 from typing import Optional
-from gym_pybullet_drones.utils.enums import ActionType
 
-from envs.marl.drones_env import DronesEnv
 from envs.marl.pf_wrapper import PFWrapper
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.IC3Net_wrapper import IC3NetWrapper
@@ -108,6 +106,8 @@ def make_drones_env(
     wrap:bool
         if True wraps env in rllib wrapper
     '''
+    from gym_pybullet_drones.utils.enums import ActionType
+    from envs.marl.drones_env import DronesEnv
 
     env = DronesEnv(
         agent_list=config['env']['agent_list'],
