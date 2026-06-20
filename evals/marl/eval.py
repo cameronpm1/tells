@@ -110,18 +110,10 @@ def eval(
         metric_names = [
             'controller_action_error',
             'controller_action_match',
-            'slot_score',
+            'controller_action_reward',
             'ring_score',
             'close_fraction',
             'coverage_score',
-            'control_score',
-            'goal_readiness',
-            'coverage_readiness',
-            'ring_readiness',
-            'close_readiness',
-            'formation_score',
-            'hold_readiness_bonus',
-            'curriculum_reward',
         ]
 
         print("\n==== EVAL SUMMARY ====")
@@ -191,18 +183,10 @@ def eval_single_episode(
     metric_names = [
         'controller_action_error',
         'controller_action_match',
-        'slot_score',
+        'controller_action_reward',
         'ring_score',
         'close_fraction',
         'coverage_score',
-        'control_score',
-        'goal_readiness',
-        'coverage_readiness',
-        'ring_readiness',
-        'close_readiness',
-        'formation_score',
-        'hold_readiness_bonus',
-        'curriculum_reward',
     ]
     metric_values = {name: [] for name in metric_names}
 
