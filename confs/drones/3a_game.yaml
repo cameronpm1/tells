@@ -27,7 +27,7 @@ alg:
 env:
   scenario: 3_agent_drones
   max_episode_length: 400 #in seconds
-  agent_list: ['target', 'agent0', 'agent1', 'agent2']
+  agent_list: ['agent0', 'agent1', 'agent2', 'target']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
   env_kwargs:
     grid_size: 20
@@ -35,14 +35,17 @@ env:
     num_protectors: 3
     goal_box_spacing: 1.0
     goal_box_half_extents: [0.5, 0.5, 0.1]
-    protection_radius: 1.1
-    intrusion_radius: 0.3
-    adversary_replan_steps: 10
+    protection_radius: &protection_radius 1.1
+    intrusion_radius: 0.5
+    base_altitude: 0.5
+    base_speed: 6.0
+    speed_ratio: 0.6
+  controller_kwargs:
     adversary_repulsion_radius: 0.75
     adversary_repulsion_gain: 1.0
     adversary_attraction_gain: 1.0
-    base_altitude: 0.5
-    speed_ratio: 0.4
+    adversary_replan_steps: 10
+    protection_radius: *protection_radius
 
 sim:
   n: 3 #number of pursuit agents

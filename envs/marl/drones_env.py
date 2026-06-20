@@ -24,6 +24,7 @@ For ActionType.VEL, actions are 4D:
 
 import numpy as np
 import pybullet as p
+from copy import deepcopy
 from gymnasium import spaces
 
 from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
@@ -43,15 +44,13 @@ class PredatorPreyAviary(BaseRLAviary):
         num_protectors: int = 3,
         goal_box_spacing: float = 1.0,
         goal_box_half_extents: tuple[float, float, float] = (0.5, 0.5, 0.1),
-        protection_radius: float = 1.1,
         intrusion_radius: float = 0.3,
         adversary_replan_steps: int = 10,
-        adversary_repulsion_radius: float = 0.75,
-        adversary_repulsion_gain: float = 1.0,
-        adversary_attraction_gain: float = 1.0,
         base_altitude: float = 0.5,
         base_speed: float = 8.0,
         speed_ratio: float = 0.4,
+        protection_radius: float = 1.1,
+        controller_kwargs: dict = None,
         drone_model: DroneModel = DroneModel.CF2X,
         neighbourhood_radius: float = np.inf,
         initial_xyzs=None,
@@ -64,9 +63,9 @@ class PredatorPreyAviary(BaseRLAviary):
         obs: ObservationType = ObservationType.KIN,
         act: ActionType = ActionType.VEL,
     ):
-
+        self.full_agent_list = agent_list
         self.agents = learned_agent_list
-        self.num_agents = len(self.agents)
+        self.n_agents = len(self.agents)
         self.target_idx = len(self.agents)
         self.grid_size = grid_size
         self.base_altitude = base_altitude
@@ -81,9 +80,15 @@ class PredatorPreyAviary(BaseRLAviary):
         self.intrusion_radius = float(intrusion_radius)
         self.adversary_replan_steps = int(adversary_replan_steps)
 
-        self.adversary_repulsion_radius = float(adversary_repulsion_radius)
-        self.adversary_repulsion_gain = float(adversary_repulsion_gain)
-        self.adversary_attraction_gain = float(adversary_attraction_gain)
+        self.controller_cfg = {
+            'adversary_repulsion_radius': 0.75,
+            'adversary_repulsion_gain': 1.0,
+            'adversary_attraction_gain': 1.0,
+            'adversary_replan_steps': 10,
+            'protection_radius': self.protection_radius,
+        }
+        if controller_kwargs is not None:
+            self.controller_cfg.update(controller_kwargs)
 
         if goal_line_center is None:
             if goal_pos is None:
@@ -102,7 +107,7 @@ class PredatorPreyAviary(BaseRLAviary):
         self._policy_step_counter = 0
         self.current_target_box_idx = 0
 
-        self.num_drones = self.num_agents + 1
+        self.num_drones = self.n_agents + 1
 
         if initial_xyzs is None:
             initial_xyzs = self._sample_initial_xyzs(self._rng)
@@ -124,6 +129,14 @@ class PredatorPreyAviary(BaseRLAviary):
 
         self._step = 0
         self.difficulty = 1.0
+
+        self.obs_map = {
+            'self': slice(0, 6),
+            'target': slice(6, 24),
+            'team': slice(24, 24 + 3 * (len(self.agents) - 1)),
+            'target_obs': slice(24, 24 + 3 * (len(self.agents)))
+        }
+        self.goal_rel = True
 
     def _initialize_box_state(self):
         """
@@ -189,7 +202,7 @@ class PredatorPreyAviary(BaseRLAviary):
 
         return team_state
 
-    def _actionSpace(self):
+    def _action_space(self,agent):
         """
         Learner only controls protector drones.
         The adversarial drone action is injected internally.
@@ -197,11 +210,11 @@ class PredatorPreyAviary(BaseRLAviary):
         return spaces.Box(
             low=-1.0,
             high=1.0,
-            shape=(self.num_agents, 3),
+            shape=(self.n_agents, 3),
             dtype=np.float32,
         )
 
-    def _observationSpace(self):
+    def _observation_space(self,agent):
         """
         Per-protector observation:
             own velocity, 3
@@ -224,13 +237,13 @@ class PredatorPreyAviary(BaseRLAviary):
             + self.num_goal_boxes
             + 3
             + 3
-            + 3 * self.num_agents
+            + 3 * self.n_agents
         )
 
         return spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(self.num_agents, obs_dim),
+            shape=(self.n_agents, obs_dim),
             dtype=np.float32,
         )
 
@@ -241,7 +254,7 @@ class PredatorPreyAviary(BaseRLAviary):
 
         obs = {}
 
-        for i in range(self.num_agents):
+        for i in range(self.num_drones):
             local_obs = {}
             own_pos = positions[i]
             own_vel = velocities[i]
@@ -249,15 +262,16 @@ class PredatorPreyAviary(BaseRLAviary):
             local_obs['self'] = np.concatenate((own_vel, own_pos))
 
             rel_positions = []
-            for j in range(self.NUM_DRONES):
-                if j == i or j == self.target_idx:
+            for j in range(self.num_drones):
+                if j == self.target_idx:
+                    local_obs['target'] = np.concatenate((box_rel_positions, positions[self.target_idx] - own_pos))
+                elif j == i:
                     continue
-                rel_positions.append(positions[j] - own_pos)
+                else:
+                    rel_positions.append(positions[j] - own_pos)
             local_obs['team'] = np.array(rel_positions).flatten()
 
-            local_obs['target'] = np.concatenate((box_rel_positions, positions[self.target_idx] - own_pos))
-
-            obs[self.agents[i]] = np.concatenate((local_obs['self'], local_obs['target'], local_obs['team']))
+            obs[self.full_agent_list[i]] = np.concatenate((local_obs['self'], local_obs['target'], local_obs['team']))
 
         return obs
     
@@ -275,7 +289,10 @@ class PredatorPreyAviary(BaseRLAviary):
         self._initialize_box_state()
         self.INIT_XYZS = self._sample_initial_xyzs(self._rng)
 
-        return super().reset(seed=seed, options=options)
+        obs, infos = super().reset(seed=seed, options=options)
+        self.obs = obs
+
+        return deepcopy(obs), {}
 
     def step(self, action_dict):
         self._step += 1
@@ -285,36 +302,35 @@ class PredatorPreyAviary(BaseRLAviary):
             action.append(action_dict[agent])
 
         action = np.asarray(action, dtype=np.float32)
-        speed = np.ones((self.num_agents, 1), dtype=np.float32) * self.base_speed
+        speed = np.ones((self.n_agents, 1), dtype=np.float32) * self.base_speed
         action = np.hstack([action, speed])
 
         dt = 1.0 / float(getattr(self, "CTRL_FREQ", 30))
         self._propagate_box_points(dt)
 
         full_action = np.zeros((self.num_drones, 4), dtype=np.float32)
-        full_action[: self.num_agents, :] = action
+        full_action[: self.n_agents, :] = action
         full_action[self.target_idx, :] = self._scripted_target_action()
 
         self._policy_step_counter += 1
 
-        return super().step(full_action)
+        obs, rewards, terminations, truncations, infos = super().step(full_action)
+        self.obs = obs
+
+        return deepcopy(obs), rewards, terminations, truncations, infos
 
     def _scripted_target_action(self):
         """
         Compute the adversary action from the compact team state and box state.
         """
         team_state = self._get_team_state()
-        replan = self._policy_step_counter % self.adversary_replan_steps == 0
+        replan = self._policy_step_counter % self.controller_cfg['adversary_replan_steps'] == 0
 
         action, target_box_idx = self._compute_adversary_action_from_state(
-            team_state=team_state,
-            box_state=self.box_state.copy(),
+            obs=self.obs['target'],
+            obs_map=self.obs_map,
             current_target_box_idx=self.current_target_box_idx,
             replan=replan,
-            protection_radius=self.protection_radius,
-            repulsion_radius=self.adversary_repulsion_radius,
-            repulsion_gain=self.adversary_repulsion_gain,
-            attraction_gain=self.adversary_attraction_gain,
         )
 
         self.current_target_box_idx = int(target_box_idx)
@@ -323,27 +339,25 @@ class PredatorPreyAviary(BaseRLAviary):
 
     def _compute_adversary_action_from_state(
         self,
-        team_state: np.ndarray,
-        box_state: np.ndarray,
+        obs,
+        obs_map,
         current_target_box_idx: int,
-        protection_radius: float,
-        repulsion_radius: float,
-        repulsion_gain: float,
-        attraction_gain: float,
         replan: bool = True,
     ):
-        team_state = np.asarray(team_state, dtype=np.float32)
-        box_state = np.asarray(box_state, dtype=np.float32)
+        adversary_pos = obs[obs_map['self']][3:]
+        team_pos = (obs[obs_map['target_obs']] + np.tile(adversary_pos, self.n_agents)).reshape(-1,3)
+        box_pos = (obs[obs_map['target']][:-3] + np.tile(adversary_pos, int(len(obs[obs_map['target']])/3 - 1))).reshape(-1,3)
 
-        agent_pos = team_state[: self.num_agents, 0:3]
-        adversary_pos = team_state[self.target_idx, 0:3]
-        box_pos = box_state[:, 0:3]
+        protection_radius = self.controller_cfg['protection_radius']
+        repulsion_radius = self.controller_cfg['adversary_repulsion_radius']
+        repulsion_gain = self.controller_cfg['adversary_repulsion_gain']
+        attraction_gain = self.controller_cfg['adversary_attraction_gain']
 
         selected_target_box_idx = int(current_target_box_idx)
 
         if replan or not (0 <= selected_target_box_idx < self.num_goal_boxes):
             dists = np.linalg.norm(
-                box_pos[:, None, 0:3] - agent_pos[None, :, 0:3],
+                box_pos[:, None, 0:3] - team_pos[None, :, 0:3],
                 axis=2,
             )
 
@@ -356,11 +370,11 @@ class PredatorPreyAviary(BaseRLAviary):
 
         target_pos = box_pos[selected_target_box_idx]
         force = np.zeros(3, dtype=np.float32)
-
+        print(target_pos,adversary_pos)
         attraction = target_pos - adversary_pos
         force += float(attraction_gain) * attraction
 
-        for protector in agent_pos:
+        for protector in team_pos:
             diff = adversary_pos - protector
             diff[2] = 0.0
 
@@ -371,7 +385,7 @@ class PredatorPreyAviary(BaseRLAviary):
 
         speed = self.base_speed * self.speed_ratio
 
-        if np.linalg.norm(force) < 1e-6:
+        if np.linalg.norm(force) < 0.5:
             action = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
         else:
             direction = force / np.linalg.norm(force)
@@ -392,8 +406,7 @@ class PredatorPreyAviary(BaseRLAviary):
         protected = self._compute_protected_boxes()
         reward = float(np.mean(protected))
 
-        breached_box_idx = self._breached_box_index()
-        if breached_box_idx is not None:
+        if self._breached_box():
             reward -= 1.0
 
         reward_dict = {}
@@ -404,13 +417,13 @@ class PredatorPreyAviary(BaseRLAviary):
         return reward_dict
 
     def _computeTerminated(self):
+
         if self._out_of_bounds():
             terminated = True
-
-        if self._breached_box_index() is not None:
+        elif self._breached_box():
             terminated = True
-
-        terminated = False
+        else:
+            terminated = False
 
         terminated_dict = {}
         for agent in self.agents:
@@ -422,8 +435,8 @@ class PredatorPreyAviary(BaseRLAviary):
     def _computeTruncated(self):
         if self._step > self.max_episode_length:
             truncated = True
-
-        truncated = False
+        else:
+            truncated = False
 
         truncated_dict = {}
         for agent in self.agents:
@@ -434,11 +447,11 @@ class PredatorPreyAviary(BaseRLAviary):
 
     def _compute_protected_boxes(self):
         team_state = self._get_team_state()
-        protector_pos = team_state[: self.num_agents, 0:3]
+        protector_pos = team_state[: self.n_agents, 0:3]
         protected = np.zeros(self.num_goal_boxes, dtype=bool)
 
         for goal_idx, point in enumerate(self.box_state[:, 0:3]):
-            for agent_idx in range(self.num_agents):
+            for agent_idx in range(self.n_agents):
                 pos = protector_pos[agent_idx]
                 horizontal_dist = np.linalg.norm(pos - point)
 
@@ -448,13 +461,14 @@ class PredatorPreyAviary(BaseRLAviary):
 
         return protected
 
-    def _breached_box_index(self):
+    def _breached_box(self):
         target_pos = self._getDroneStateVector(self.target_idx)[0:3]
 
         for goal_idx, point in enumerate(self.box_state[:, 0:3]):
             horizontal_dist = np.linalg.norm(target_pos[0:2] - point[0:2])
+
             if horizontal_dist <= self.intrusion_radius:
-                return goal_idx
+                return True
 
         return None
 
@@ -482,30 +496,32 @@ class PredatorPreyAviary(BaseRLAviary):
 
     def _sample_initial_xyzs(self, rng):
         spawn_radius = 1.0
-        xyzs = np.zeros((self.num_agents + 1, 3), dtype=np.float32)
+        xyzs = np.zeros((self.n_agents + 1, 3), dtype=np.float32)
 
         min_goal_x = float(np.min(self.box_state[:, 0]))
         max_goal_x = float(np.max(self.box_state[:, 0]))
+        min_goal_y = float(np.min(self.box_state[:, 1]))
+        max_goal_y = float(np.max(self.box_state[:, 1]))
         target_x = rng.uniform(min_goal_x, max_goal_x)
         target_y_sign = -1.0 if rng.random() < 0.5 else 1.0
-        target_y = self.goal_line_center_xy[1] + target_y_sign * self.grid_size * 0.75
+        target_y = rng.uniform(min_goal_x, max_goal_x) + target_y_sign * 5
 
         xyzs[self.target_idx] = np.array(
             [target_x, target_y, self.base_altitude*2],
             dtype=np.float32,
         )
 
-        if self.num_agents <= self.num_goal_boxes:
+        if self.n_agents <= self.num_goal_boxes:
             assigned_goals = np.rint(
-                np.linspace(0, self.num_goal_boxes - 1, self.num_agents)
+                np.linspace(0, self.num_goal_boxes - 1, self.n_agents)
             ).astype(int)
         else:
-            assigned_goals = np.arange(self.num_agents) % self.num_goal_boxes
+            assigned_goals = np.arange(self.n_agents) % self.num_goal_boxes
 
         box_idx = int(rng.integers(0, self.num_goal_boxes))
         box_center = self.box_state[box_idx, 0:3].astype(np.float32)
 
-        for i in range(self.num_agents):
+        for i in range(self.n_agents):
             angle = rng.uniform(-np.pi, np.pi)
             radius = rng.uniform(0.0, spawn_radius)
 
@@ -565,7 +581,7 @@ class PredatorPreyAviary(BaseRLAviary):
         """
 
         if camera_position is None:
-            camera_position = np.array([4.0, 4.0, 2.6], dtype=np.float32)
+            camera_position = np.array([4.5, 4.5, 2.9], dtype=np.float32)
 
         if target_position is None:
             target_position = np.array([0.0, 0.0, 0.5], dtype=np.float32)

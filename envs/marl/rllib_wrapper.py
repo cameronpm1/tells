@@ -127,6 +127,7 @@ class RLLibWrapper(MultiAgentEnv):
         obs,infos = self.env.reset(**kwargs)
 
         obs.pop("target", None)
+
         infos['__common__'] = {}
         infos['__common__']['raw_reward'] = 0.0
         self.last_raw_reward = 0.0
