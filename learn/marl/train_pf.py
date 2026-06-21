@@ -523,8 +523,8 @@ def make_ray_config(
             .env_runners(num_env_runners=cfg['alg']['nenvs'], #20
                         num_envs_per_env_runner=cfg['alg']['cpu_envs'], #60
                         num_cpus_per_env_runner=1,
-                        sample_timeout_s=120,
-                        rollout_fragment_length=256,
+                        #sample_timeout_s=120,
+                        #rollout_fragment_length=256,
                         )
             .resources(num_gpus=cfg['alg'].get('num_gpus', 0))
             .multi_agent(policy_mapping_fn=policy_mapping_fn,

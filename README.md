@@ -170,7 +170,7 @@ uv run python run.py --command belief_eval --model_dir logs/belief/_ppotest1_NN_
 uv run python run.py --command marl_eval_belief --belief_dir logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config confs/belief/test1.yaml --config confs/predator_prey/3a_game.yaml --model_dir logs/marl/ppo_bc_ex/checkpoint4500/
 ```
 
-## Training a Belief Model with a Policy
+## Training a Policy with a Belief Model
 
 ```bash
 uv run python run.py --command marl_train_belief --belief_dir logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config confs/belief/test1.yaml --config confs/predator_prey/3a_game.yaml

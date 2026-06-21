@@ -1,8 +1,8 @@
-seed: &seed 24 # set experiment seed
+seed: &seed 23 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
 min_obs: 10
-logdir: logs/marl/ppo_bc_ex
+logdir: logs/marl/test #ppo_allo2
 notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 alg:
@@ -27,7 +27,7 @@ alg:
   vf_clip_param: 10.0
   grad_clip: 0.25
   pretrain:
-    enabled: false
+    enabled: true
     episodes: 900
     epochs: 28
     batch_size: 1024

@@ -3,7 +3,8 @@ import gymnasium
 import numpy as np
 from copy import deepcopy
 from typing import Optional
-from gymnasium import spaces 
+from gymnasium import spaces
+from itertools import permutations 
 
 from mpe2._mpe_utils.core import World
 from mpe2._mpe_utils.core import Agent, Landmark
@@ -24,6 +25,7 @@ class PredatorPreyEnv(gymnasium.Env):
         self,
         mpeEnv,
         agents,
+        adversary_controller,
         reward_kwargs: Optional[dict] = None,
         controller_kwargs: Optional[dict] = None,
         seed: Optional[int] = None,
@@ -33,6 +35,8 @@ class PredatorPreyEnv(gymnasium.Env):
         self.env = mpeEnv
         self.env.reset(seed=seed)
         self.agents = agents
+        self.n_agents = len(agents)
+        self.adversary_controller = adversary_controller
         self.local_observations = local_observations
         self.env.unwrapped.local_observations = local_observations
         self.reward_cfg = {
@@ -67,6 +71,18 @@ class PredatorPreyEnv(gymnasium.Env):
         self.hold_steps = 0
         self.last_metrics = {}
 
+        self.obs_map = {
+            'self': slice(0, 4),
+            'target': slice(4, 8),
+            'team': slice(8, 8 + 2 * (len(self.agents) - 1)),
+            'target_obs': slice(8, 8 + 2 * (len(self.agents))),
+            'self_pos': slice(2, 4),
+            'target_goal': slice(4, 6),
+            'target_pos': slice(6, 8),
+            'state_space':(17,)
+        }
+        self.goal_rel = True
+
     def _observation_space(self, agent):
         return self.env.observation_space(agent)
 
@@ -85,7 +101,7 @@ class PredatorPreyEnv(gymnasium.Env):
         controller_metrics = self.compute_controller_action_reward(filtered_actions)
         filtered_actions['target'] = self.boundary_safe_action(
             'target',
-            self.adversary_action('target'),
+            self.adversary_controller(self.obs['target'], self.obs_map, self.controller_cfg),
         )
 
         obs, rewards, terminations, truncations, infos = self.env.step(filtered_actions)
@@ -123,7 +139,7 @@ class PredatorPreyEnv(gymnasium.Env):
             for agent in self.agents
         }
 
-        return self.obs, rewards, terminations, truncations, info
+        return deepcopy(self.obs), rewards, terminations, truncations, info
 
     def reset(self, *, seed=None, options=None):
         self.ts = 0
@@ -141,7 +157,7 @@ class PredatorPreyEnv(gymnasium.Env):
         self.last_metrics = metrics
 
         
-        return self.obs, {a: {} for a in self.agents}
+        return deepcopy(self.obs), {a: {} for a in self.agents}
 
     def get_obs(self):
 
@@ -153,43 +169,6 @@ class PredatorPreyEnv(gymnasium.Env):
     ):
 
         self.seed = seed
-
-    def adversary_action(
-        self, 
-        agent_id:str
-    ):
-
-        # find adversary entity
-        world = self.env.unwrapped.world
-
-        adversary = [a for a in world.agents if a.name == agent_id][0]
-
-        force = np.zeros(2)
-
-        for agent in world.agents:
-            if agent.adversary:
-                continue
-
-            diff = adversary.state.p_pos - agent.state.p_pos
-            dist = np.linalg.norm(diff) + 1e-6
-            local_gain = self.controller_cfg['prey_sensitivity']
-            if dist < self.controller_cfg['prey_avoid_radius']:
-                local_gain *= self.controller_cfg['prey_avoid_gain']
-            force += local_gain * (diff / dist ** self.controller_cfg['force_exponent'])
-
-        norm = np.linalg.norm(force)
-
-        if norm > 0:
-            force = force / norm
-
-        # choose dominant direction
-        if norm < self.controller_cfg['action_threshold']:
-            return 0  # no-op
-
-        if abs(force[0]) > abs(force[1]):
-            return 2 if force[0] > 0 else 1   # right / left
-        else:
-            return 4 if force[1] > 0 else 3   # up / down
 
     def render_rgb(self):
         """
@@ -650,27 +629,39 @@ class PredatorPreyScenario(BaseScenario):
     def observation(self, agent, world):
         # ADD NOISE TO OBSERVATIONS OF OTHER AGENTS
 
-        obs = []
+        obs = {}
 
-        obs.append(agent.state.p_vel)
-        obs.append(agent.state.p_pos)
+        vel = agent.state.p_vel
+        pos = agent.state.p_pos
 
         for landmark in world.landmarks:
-            obs.append(landmark.state.p_pos - agent.state.p_pos)
+            goal = landmark.state.p_pos - pos
 
+        obs['self'] = np.concatenate((vel, pos))
+
+        rel_positions = []
         for other in world.agents:
-            if other is agent or (self.local_observations and 'agent' in other.name):
+            if other.adversary:
+                obs['target'] = np.concatenate((goal, other.state.p_pos - pos))
+            elif other is agent:
                 continue
-                #obs.append(other.state.p_pos)
-            obs.append(other.state.p_pos - agent.state.p_pos)
+            else:
+                rel_positions.append(other.state.p_pos - pos)
 
+        obs['team'] = np.array(rel_positions).flatten()
+
+        
         predator_names = [name for name in self.agents if 'agent' in name]
         agent_id = np.zeros(len(predator_names), dtype=np.float32)
         if agent.name in predator_names:
             agent_id[predator_names.index(agent.name)] = 1.0
-        obs.append(agent_id)
 
-        return np.concatenate(obs)
+        obs['other'] = agent_id
+
+        obs = np.concatenate((obs['self'], obs['target'], obs['team'], obs['other']))
+    
+        return obs
+    
 
 
 env = make_env(ScenarioEnv)

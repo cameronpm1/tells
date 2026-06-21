@@ -8,9 +8,6 @@ from collections import OrderedDict
 from typing import Any, Dict, Type, Optional, Union
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
-from envs.marl.particle_filter import PredatorPreyParticleFilter
-
-
 class PFWrapper(MultiAgentEnv):
     '''
     wrapper for multiagent envs
@@ -21,13 +18,19 @@ class PFWrapper(MultiAgentEnv):
     def __init__(
             self,
             env,
+            particle_filter,
+            agent_control_function,
+            target_control_function,
+            dim: int = 2,
             eval: bool = False,
             belief_kwargs: Optional[dict] = None,
     ): 
         super().__init__()
 
         self.env = env
+        self.dim = dim
         self.eval = eval
+        self.obs_map = env.obs_map
         self.belief_kwargs = belief_kwargs
         self.agents = deepcopy(env.agents)
         self.possible_agents = deepcopy(env.agents)
@@ -61,9 +64,12 @@ class PFWrapper(MultiAgentEnv):
                 if agent != agent2:
                     start_dict[agent2] = np.zeros((dim,))
             prey_start = np.zeros((dim,))
-            self.particle_filters[agent] = PredatorPreyParticleFilter(
+            self.particle_filters[agent] = particle_filter(
+                obs_map = self.obs_map,
                 agent_start_pos = start_dict,
                 prey_start_pos = prey_start,
+                agent_control_function = agent_control_function,
+                target_control_function = target_control_function,
             )
             self.switch_count[agent] = 0
             self.observing_agent[agent] = 'target'
@@ -112,9 +118,11 @@ class PFWrapper(MultiAgentEnv):
         errors = []
         infos['__common__'] = {}
         for agent in self.agents:
-            pos = obs[agent][2:4]
-            goal = obs[agent][4:6] + pos
-            self.particle_filters[agent].propagate_all(pos,goal)
+            pos = obs[agent][self.obs_map['self_pos']]
+            goal = obs[agent][self.obs_map['target_goal']] 
+            if self.env.goal_rel:
+                goal = goal + np.tile(pos,len(goal)//self.dim)
+            self.particle_filters[agent].propagate_all(new_obs[agent][self.obs_map['self']],goal)
 
             pf_obs = self.particle_filters[agent].get_observation()
             new_obs[agent][6:8] = pf_obs['target']['pos'] - pos
@@ -153,7 +161,7 @@ class PFWrapper(MultiAgentEnv):
         avg_error = np.average(errors)
 
         #obs.pop("target", None)
-        #new_obs.pop("target", None)
+        new_obs.pop("target", None)
         rew.pop('target', None)
         terminated.pop('target', None)
         truncated.pop('target', None)

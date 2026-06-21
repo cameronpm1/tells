@@ -5,7 +5,10 @@ from typing import Optional
 from envs.marl.pf_wrapper import PFWrapper
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.IC3Net_wrapper import IC3NetWrapper
+from envs.marl.drones_env import PredatorPreyAviary
+from envs.marl.particle_filter import PredatorPreyParticleFilter
 from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
+from controllers.predator_prey_control import adversary_controller, compute_slot_actions, action_to_vec
 
 def make_marl_env(
         config: dict,
@@ -71,6 +74,7 @@ def make_predator_prey_env(
     env = PredatorPreyEnv(
         mpeEnv=env,
         agents=config['env']['learned_agent_list'],
+        adversary_controller=adversary_controller,
         reward_kwargs=config['env'].get('reward_kwargs'),
         controller_kwargs=config['env'].get('controller_kwargs'),
         seed = seed,
@@ -78,11 +82,19 @@ def make_predator_prey_env(
     )
 
     if wrap == 'rllib':
-        env = RLLibWrapper(env,eval,belief_kwargs)
+        env = RLLibWrapper(env,'predator_prey',eval,belief_kwargs)
     elif wrap == 'ic3net':
         env = IC3NetWrapper(env)
     elif wrap == 'pf':
-        env = PFWrapper(env,eval,belief_kwargs)
+        env = PFWrapper(
+            env,
+            particle_filter = PredatorPreyParticleFilter,
+            agent_control_function = lambda obs, obs_map: action_to_vec(compute_slot_actions(obs, obs_map)),
+            target_control_function = lambda obs, obs_map: action_to_vec(adversary_controller(obs, obs_map, config['env']['controller_kwargs'])),
+            dim=2,
+            eval=eval,
+            belief_kwargs=belief_kwargs,
+        )
     
     return env
 
@@ -109,17 +121,18 @@ def make_drones_env(
     from gym_pybullet_drones.utils.enums import ActionType
     from envs.marl.drones_env import DronesEnv
 
-    env = DronesEnv(
+    env = PredatorPreyAviary(
         agent_list=config['env']['agent_list'],
         learned_agent_list=config['env']['learned_agent_list'],
+        controller_kwargs=config['env'].get('controller_kwargs'),
         gui=False,
         act=ActionType.VEL,
-        episode_len_sec=config['env']['max_episode_length']*config['timestep'], # 10Hz step rate
+        max_episode_length=config['env']['max_episode_length']*config['timestep'], # 10Hz step rate
         **config['env']['env_kwargs'],
     )
 
     if wrap == 'rllib':
-        env = RLLibWrapper(env,eval,belief_kwargs)
+        env = RLLibWrapper(env,'drones',eval,belief_kwargs)
     elif wrap == 'ic3net':
         env = IC3NetWrapper(env)
     

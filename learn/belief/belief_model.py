@@ -240,7 +240,7 @@ class BeliefModel(pl.LightningModule):
         #self.model = NN2CNN(self.hparams.input_channels,self.hparams.output_channels)
         self.model = NN(self.hparams.input_channels,self.hparams.output_channels)
         self.loss_func = PermutationInvariantMSE() #torch.nn.MSELoss()
-        self.val_loss_func = WeightedPermutationInvariantMSE()
+        self.val_loss_func = PermutationInvariantMSE()
 
     def train_forward(self, x):
         output = self.model(x)

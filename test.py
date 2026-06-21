@@ -6,11 +6,11 @@ import gurobipy as gp
 
 from controllers.boat_mpc import boatMPC
 from util.util import mkdir, load_config
-from envs.marl.drones_env import DronesEnv
 from tells_environment_dynamics.test import *
+from envs.marl.drones_env import PredatorPreyAviary
 from envs.rl.make_envs import make_usv_game, make_usv_env
-from envs.marl.make_env import make_drones_env, make_predator_prey_env
 from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
+from envs.marl.make_env import make_drones_env, make_predator_prey_env, make_marl_env
 
 from gym_pybullet_drones.utils.enums import ActionType
 
@@ -186,27 +186,30 @@ def drone_test():
         episode_len_sec=60,
     )
     '''
-    env = make_drones_env(config=cfg,seed=1,wrap=True)
+
+    env = make_marl_env(config=cfg,wrap='rllib')
 
     obs, info = env.reset(seed=1)
     images = []
 
-    for _ in range(200):  # 60 sec at ctrl_freq=30
+    for _ in range(cfg['env']['max_episode_length']):  # 60 sec at ctrl_freq=30
         # For ActionType.VEL, action shape is:
         # (num_pursuers, 4) = [vx_dir, vy_dir, vz_dir, speed_fraction]
         # All zeros means commanded hover/no motion.
         action = {}
         for agent in env.agents:
-            action[agent] = np.zeros((4), dtype=np.float32)
+            action[agent] = np.zeros((3,))
 
         obs, reward, terminated, truncated, info = env.step(action)
 
         time.sleep(0.1)
-
-        #if terminated or truncated:
-        #    obs, info = env.reset()
+        
+        if terminated['__all__'] or truncated['__all__']:
+            break
 
         images.append(env.render_rgb())
+
+
 
     save_file = 'test_vid.gif'
     print('generating video in ' + save_file)
@@ -222,4 +225,4 @@ if __name__ == "__main__":
     #gen_belief_img()
     #test_usv_game()
     #test_usv_env()
-    #drone_test()
+    drone_test()

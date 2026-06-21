@@ -116,14 +116,14 @@ class CustomDataset(Dataset):
         #a_idx = idx%3
         #agent_name = data_labels[a_idx]
         #print(type(datapoint[str(agent_name)][0]))
-
-
-        xy_pairs = np.array(datapoint['target_true']).flatten()
-        last_pos = xy_pairs[-2:]   
-        data_rel = xy_pairs - np.tile(last_pos,22)
+        xy_pairs = np.array(datapoint['target_true']).flatten() 
+        last_pos = xy_pairs[-2:]  
 
         label = np.array(datapoint['team_true']).flatten()  
         label_rel = label - np.tile(last_pos,4)
+
+        xy_pairs[0:int(len(label)/2)] = label[0:int(len(label)/2)]
+        data_rel = xy_pairs - np.tile(last_pos,22)
 
         return torch.from_numpy(data_rel.flatten()).to(torch.float32), torch.from_numpy(label_rel.flatten()).to(torch.float32)
         

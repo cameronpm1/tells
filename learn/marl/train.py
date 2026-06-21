@@ -34,7 +34,7 @@ from ray.rllib.utils.metrics import (
 from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
-from controllers.marl_slot_controller import compute_slot_actions
+from controllers.predator_prey_control import compute_slot_actions
 from learn.marl.callbacks import CurriculumCallback, LogRawEpisodeReturn
 
 try:
@@ -183,7 +183,8 @@ def _collect_slot_controller_dataset(cfg: dict, episodes: int):
         trajectory = []
 
         for _ in range(cfg['env']['max_episode_length']):
-            expert_actions = compute_slot_actions(env.env.unwrapped.world)
+            expert_actions = compute_slot_actions(obs,env.unwrapped.obs_map)
+
             predator_obs = {
                 agent: np.asarray(obs[agent], dtype=np.float32).copy()
                 for agent in learned_agents
