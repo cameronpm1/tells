@@ -391,8 +391,6 @@ def make_ray_config(
     ray_config class
     '''
 
-    belief_kwargs = {}
-
     #make env function 
     def env_maker(config):
 

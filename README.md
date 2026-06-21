@@ -167,16 +167,6 @@ python run.py --command marl_train_belief --belief_dir /home/cameron/tells/logs/
 python run.py --command pf_eval --model_dir /home/cameron/tells/logs/marl/ppo_bc/checkpoint2000 --config  /home/cameron/tells/confs/predator_prey/3a_game.yaml
 ```
 
-### Train IC3Net
-
-```bash
-source .venv_ic3net/bin/activate
-```
-
-```bash
-python run.py --command ic3_train --config /home/cameron/tells/confs/predator_prey/3a_game_ic3.yaml
-```
-
 ---
 
 ## Notes

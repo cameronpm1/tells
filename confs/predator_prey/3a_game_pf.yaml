@@ -92,6 +92,9 @@ env:
     slot_goal_backoff: 1.2
     slot_goal_lateral: 1.25
     slot_tolerance: 0.85
+  belief_kwargs:
+      max_speed: 0.9
+      speed_ratio: 0.35
 
 sim:
   n: 3 #number of pursuit agents

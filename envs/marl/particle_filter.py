@@ -296,9 +296,10 @@ class PredatorPreyParticleFilter:
         prey_start_pos: list[float], 
         agent_control_function,
         target_control_function,
-        num_particles: int = 10,
+        num_particles: int = 100,
         std_dev: float = 0.2,
         max_speed: float = 1.0,
+        speed_ratio: float = 0.4,
         dt: float = 0.1
     ):
         self.obs_map = obs_map
@@ -308,6 +309,7 @@ class PredatorPreyParticleFilter:
         self.dim = len(prey_start_pos)
         self.dt = dt
         self.max_speed = max_speed
+        self.speed_ratio = speed_ratio
         self.std_dev = std_dev
 
         for i, (name, pos) in enumerate(agent_start_pos.items()):
@@ -331,7 +333,7 @@ class PredatorPreyParticleFilter:
             mean_pos=self.prey_pos,
             std_dev=np.ones(self.dim) * self.std_dev,
             dim=self.dim,
-            max_speed=self.max_speed*.4,
+            max_speed=self.max_speed*self.speed_ratio,
             dt=dt,
             target=True,
         )

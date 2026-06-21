@@ -18,46 +18,6 @@ if __name__ == "__main__":
 
     if args.config is None:
         print('ERROR: No config file provided')
-    elif args.command == 'rl_train':
-
-        torch.set_num_threads(9)
-        from learn.rl.train import train
-
-        print('Training RL model with config:', args.config)
-        train(args.config)
-    elif args.command == 'rl_eval':
-
-        if args.model_dir is None:
-            print('ERROR: No model directory provided for evaluation')
-            exit()
-        else:
-
-            torch.set_num_threads(9)
-            from evals.rl.eval import eval
-
-            print('Evaluating RL model with config:', args.config)
-            print('Loading model from:', args.model_dir)
-            eval(args.config,args.model_dir)
-
-    elif 'rl_collect_data' == args.command:
-
-        if args.model_dir is None:
-            print('ERROR: No model directory provided for evaluation')
-            exit()
-        else:
-
-            torch.set_num_threads(9)
-            from evals.rl.collect_eval_data import collect_data
-
-            if args.save_dir is None:
-                save_dir = 'data/' + args.model_dir.split('rl/')[1].split('/')[0]
-            else:
-                save_dir = 'data/' + args.save_dir
-            print('Collecting data with RL model and config:', args.config)
-            print('Loading model from:', args.model_dir)
-            print('Saving data to:', save_dir)
-
-            collect_data(args.config, args.model_dir, save_dir, n_runs=args.runs, n_workers=args.n_workers)
 
     elif args.command == 'marl_train':
 
@@ -206,21 +166,6 @@ if __name__ == "__main__":
         print('Evaluating PF model with config:', args.config)
         print('Loading model from:', args.model_dir)
         train(args.config,{})
-
-    elif 'ic3_train' in args.command:
-
-        from learn.marl.train_IC3Net import train
-
-        print('Training IC3Net model with config:', args.config)
-        train(args.config)
-
-    elif 'ic3_eval' in args.command:
-
-        from evals.marl.eval_IC3Net import eval
-
-        print('Evaluating IC3Net model with config:', args.config)
-        print('Loading model from:', args.model_dir)
-        eval(args.config,args.model_dir,args.runs)
 
     #config_dir = args.config if args.config else 'confs/usv_configs/3b_game.yaml'
     

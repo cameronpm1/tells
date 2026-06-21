@@ -5,7 +5,6 @@ from gym_pybullet_drones.utils.enums import ActionType
 
 from envs.marl.pf_wrapper import PFWrapper
 from envs.marl.rllib_wrapper import RLLibWrapper
-from envs.marl.IC3Net_wrapper import IC3NetWrapper
 from envs.marl.drones_env import PredatorPreyAviary
 from envs.marl.particle_filter import PredatorPreyParticleFilter
 from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
@@ -84,8 +83,6 @@ def make_predator_prey_env(
 
     if wrap == 'rllib':
         env = RLLibWrapper(env,'predator_prey',eval,belief_kwargs)
-    elif wrap == 'ic3net':
-        env = IC3NetWrapper(env)
     elif wrap == 'pf':
         env = PFWrapper(
             env,
@@ -94,7 +91,7 @@ def make_predator_prey_env(
             target_control_function = lambda obs, obs_map: action_to_vec(adversary_controller(obs, obs_map, config['env']['controller_kwargs'])),
             dim=2,
             eval=eval,
-            belief_kwargs=belief_kwargs,
+            belief_kwargs=config['env']['belief_kwargs'],
         )
     
     return env
@@ -132,7 +129,5 @@ def make_drones_env(
 
     if wrap == 'rllib':
         env = RLLibWrapper(env,'drones',eval,belief_kwargs)
-    elif wrap == 'ic3net':
-        env = IC3NetWrapper(env)
     
     return env
