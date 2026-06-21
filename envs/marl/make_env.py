@@ -5,7 +5,6 @@ from typing import Optional
 from envs.marl.pf_wrapper import PFWrapper
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.IC3Net_wrapper import IC3NetWrapper
-from envs.marl.drones_env import PredatorPreyAviary
 from envs.marl.particle_filter import PredatorPreyParticleFilter
 from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
 from controllers.predator_prey_control import adversary_controller, compute_slot_actions, action_to_vec
@@ -119,7 +118,7 @@ def make_drones_env(
         if True wraps env in rllib wrapper
     '''
     from gym_pybullet_drones.utils.enums import ActionType
-    from envs.marl.drones_env import DronesEnv
+    from envs.marl.drones_env import PredatorPreyAviary
 
     env = PredatorPreyAviary(
         agent_list=config['env']['agent_list'],

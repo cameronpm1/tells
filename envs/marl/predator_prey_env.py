@@ -11,7 +11,7 @@ from mpe2._mpe_utils.core import Agent, Landmark
 from mpe2._mpe_utils.scenario import BaseScenario
 from mpe2._mpe_utils.simple_env import SimpleEnv, make_env
 from pettingzoo.utils.conversions import parallel_wrapper_fn
-from controllers.marl_slot_controller import compute_slot_actions
+from controllers.predator_prey_control import compute_slot_actions
 
 GRID_SIZE = 10
 
@@ -293,7 +293,7 @@ class PredatorPreyEnv(gymnasium.Env):
         return metrics
 
     def compute_controller_action_reward(self, action_dict: dict) -> dict:
-        controller_actions = compute_slot_actions(self.env.unwrapped.world)
+        controller_actions = compute_slot_actions(deepcopy(self.obs), self.obs_map)
         action_matches = []
 
         for agent in self.agents:
