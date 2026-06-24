@@ -2,7 +2,7 @@ seed: &seed 23 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
 min_obs: 10
-logdir: logs/marl/test #ppo_allo2
+logdir: logs/marl/new_bc_no_other_rews
 notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 alg:
@@ -73,6 +73,9 @@ env:
     hold_close_fraction: 0.34
     hold_ring_min: 0.05
     success_hold_steps: 8
+    success_hold_steps: 8
+    success_bonus: 750.0
+    progress_scale: 60
 
 sim:
   n: 3 #number of pursuit agents

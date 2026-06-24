@@ -7,13 +7,6 @@ def repo_root():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def available_cpus():
-    try:
-        return len(os.sched_getaffinity(0))
-    except AttributeError:
-        return os.cpu_count() or 1
-
-
 def default_ray_base_dir():
     for env_name in ('SLURM_TMPDIR', 'SCRATCH', 'TMPDIR'):
         value = os.environ.get(env_name)
@@ -27,7 +20,7 @@ def set_torch_threads(args):
 
     threads = args.torch_threads
     if threads is None:
-        threads = min(32, max(1, available_cpus() // 4))
+        threads = 9
     torch.set_num_threads(threads)
     return threads
 
@@ -96,38 +89,6 @@ def configure_marl_runtime(args):
     return threads
 
 
-def rollout_overrides(args):
-    overrides = {}
-    alg_overrides = {}
-
-    if args.logdir is not None:
-        overrides['logdir'] = args.logdir
-
-    if args.auto_env_runners:
-        cpus = args.ray_cpus or available_cpus()
-        env_runners = max(1, cpus - args.reserve_cpus)
-        alg_overrides['nenvs'] = env_runners
-
-    if args.num_env_runners is not None:
-        alg_overrides['nenvs'] = args.num_env_runners
-
-    if args.num_envs_per_env_runner is not None:
-        alg_overrides['cpu_envs'] = args.num_envs_per_env_runner
-
-    if args.policy_gpus is not None:
-        alg_overrides['num_gpus'] = args.policy_gpus
-
-    if args.initial_checkpoint is not None:
-        alg_overrides['initial_checkpoint'] = args.initial_checkpoint
-
-    if len(alg_overrides) == 0:
-        return overrides
-
-    print('Applying rollout/resource overrides:', {'alg': alg_overrides})
-    overrides['alg'] = alg_overrides
-    return overrides
-
-
 def add_runtime_args(parser):
     parser.add_argument('--torch_threads', type=int, default=None, help='Torch intra-op threads. Defaults to a conservative CPU fraction.')
     parser.add_argument('--ray_cpus', type=int, default=None, help='Total CPUs exposed to Ray. Defaults to Ray auto-detection.')
@@ -139,10 +100,6 @@ def add_runtime_args(parser):
     parser.add_argument('--ray_working_dir', type=str, default=None, help='Directory shipped to Ray workers. Defaults to this repo.')
     parser.add_argument('--ray_dashboard', action='store_true', help='Enable the Ray dashboard.')
     parser.add_argument('--no_ray_runtime_env', action='store_true', help='Do not package a Ray runtime_env working_dir.')
-    parser.add_argument('--auto_env_runners', action='store_true', help='Use available CPUs to increase RLlib env runners without changing PPO/SAC training hyperparameters.')
-    parser.add_argument('--reserve_cpus', type=int, default=16, help='CPUs left for learner/system when --auto_env_runners is used.')
-    parser.add_argument('--num_env_runners', type=int, default=None, help='Override RLlib num_env_runners/alg.nenvs.')
-    parser.add_argument('--num_envs_per_env_runner', type=int, default=None, help='Override RLlib num_envs_per_env_runner/alg.cpu_envs.')
     parser.add_argument('--logdir', type=str, default=None, help='Override the config logdir for a new training/eval output directory.')
     parser.add_argument('--initial_checkpoint', type=str, default=None, help='Initialize MARL training from an existing RLlib checkpoint when the logdir has no checkpoint.')
 
@@ -210,7 +167,7 @@ if __name__ == "__main__":
         from learn.marl.train import train
 
         print('Training marl policies with config:', args.config)
-        train(args.config, kwargs=rollout_overrides(args))
+        train(args.config)
 
     elif  args.command == 'marl_eval':
 
@@ -249,7 +206,6 @@ if __name__ == "__main__":
             'belief_config_dir': args.belief_config,
             'belief_dir' : args.belief_dir
         }
-        kwargs.update(rollout_overrides(args))
 
         train(args.config,kwargs=kwargs)
 
