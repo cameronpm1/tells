@@ -103,37 +103,12 @@ def eval(
         rewards = np.array([row['reward'] for row in summaries], dtype=float)
         lengths = np.array([row['length'] for row in summaries], dtype=float)
         successes = np.array([row['success'] for row in summaries], dtype=float)
-        oobs = np.array([row['oob'] for row in summaries], dtype=float)
-        best_dists = np.array([row['best_dist'] for row in summaries], dtype=float)
-        final_dists = np.array([row['final_dist'] for row in summaries], dtype=float)
-        max_holds = np.array([row['max_hold'] for row in summaries], dtype=float)
-        metric_names = [
-            'controller_action_error',
-            'controller_action_match',
-            'controller_action_reward',
-            'ring_score',
-            'close_fraction',
-            'coverage_score',
-        ]
 
         print("\n==== EVAL SUMMARY ====")
         print(f"Runs: {len(summaries)}")
         print(f"Reward mean/std: {np.mean(rewards)} / {np.std(rewards)}")
         print(f"Length mean/std: {np.mean(lengths)} / {np.std(lengths)}")
         print(f"Success rate: {np.mean(successes)}")
-        print(f"OOB rate: {np.mean(oobs)}")
-        print(f"Best target-goal distance mean: {np.mean(best_dists)}")
-        print(f"Final target-goal distance mean: {np.mean(final_dists)}")
-        print(f"Max hold mean: {np.mean(max_holds)}")
-        for metric_name in metric_names:
-            values = [
-                row[metric_name]
-                for row in summaries
-                if row.get(metric_name) is not None
-            ]
-            if values:
-                values = np.array(values, dtype=float)
-                print(f"{metric_name} mean/std: {np.mean(values)} / {np.std(values)}")
 
 def eval_single_episode(
         env,
@@ -175,20 +150,9 @@ def eval_single_episode(
     total_reward = {agent: 0.0 for agent in obs.keys()}
     step_count = 0
     learned_agents = cfg['env']['learned_agent_list']
-    best_dist = float('inf')
-    final_dist = float('nan')
     max_hold = 0
     success = False
     oob = False
-    metric_names = [
-        'controller_action_error',
-        'controller_action_match',
-        'controller_action_reward',
-        'ring_score',
-        'close_fraction',
-        'coverage_score',
-    ]
-    metric_values = {name: [] for name in metric_names}
 
     policy_list = cfg['policy_list']
     policy_mapping_fn = marl_policy_mapping_fn
@@ -209,14 +173,8 @@ def eval_single_episode(
         obs, rewards, terminations, truncations, infos = env.step(actions)
         agent_info = infos.get(learned_agents[0], {})
         if agent_info:
-            final_dist = float(agent_info.get('target_goal_dist', final_dist))
-            best_dist = min(best_dist, final_dist)
-            max_hold = max(max_hold, int(agent_info.get('hold_steps', 0)))
             success = success or bool(agent_info.get('success', False))
             oob = oob or bool(agent_info.get('oob', False))
-            for metric_name in metric_names:
-                if metric_name in agent_info:
-                    metric_values[metric_name].append(float(agent_info[metric_name]))
 
         done = {
             "__all__": terminations["__all__"] or truncations["__all__"]
@@ -245,12 +203,7 @@ def eval_single_episode(
     print(f"Length: {episode_lengths[-1]}")
     print(f"Success: {success}")
     print(f"OOB: {oob}")
-    print(f"Best target-goal distance: {best_dist}")
-    print(f"Final target-goal distance: {final_dist}")
-    print(f"Max hold: {max_hold}")
-    for metric_name, values in metric_values.items():
-        if values:
-            print(f"{metric_name}: {np.average(values)}")
+
     if len(errors) > 0:
         print(f"Belief Error: {np.average(errors)}")
 
@@ -259,10 +212,6 @@ def eval_single_episode(
         'length': episode_lengths[-1],
         'success': int(success),
         'oob': int(oob),
-        'best_dist': best_dist,
-        'final_dist': final_dist,
-        'max_hold': max_hold,
     }
-    for metric_name, values in metric_values.items():
-        summary[metric_name] = float(np.average(values)) if values else None
+
     return summary
