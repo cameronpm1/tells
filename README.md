@@ -8,23 +8,40 @@ This repository provides a training environment for collaborative multi-agent be
 - Uses RLlib with Soft Actor-Critic (SAC) or PPO for training
 - Supports both MPE2 predator prey environment and pybullet-drones training environment
 
-## Installing Pybullet
+## Installation
 ```bash
 git submodule update --init --recursive
 
-pip install -e external/pybullet-drones
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
 ```
+
+The default sync installs the predator-prey/MARL stack. The pybullet drone
+environment is optional; install it only when needed:
+
+```bash
+uv sync --extra drones
+```
+
+On Ubuntu, install the usual rendering/video system libraries first:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential ffmpeg libgl1 libglib2.0-0 libgomp1 libegl1 libsm6 libxext6 libxrender1
+```
+
 ---
 
 ## Usage
 
 ### Training
 ```bash
-python run.py --command marl_train --config confs/predator_prey/3a_game.yaml
+uv run python run.py --command marl_train --config confs/predator_prey/3a_game.yaml
 ```
 or 
 ```bash
-python run.py --command marl_train --config confs/drones/3a_game.yaml
+uv sync --extra drones
+uv run python run.py --command marl_train --config confs/drones/3a_game.yaml
 ```
 - Starts training using the specified configuration file  
 - Logs are stored in: `logs/marl/` (will autogenerate the directory if not already created)
@@ -33,7 +50,7 @@ python run.py --command marl_train --config confs/drones/3a_game.yaml
 
 ### Evaluation
 ```bash
-python run.py --command marl_eval --config confs/predator_prey/3a_game.yaml --model_dir /home/cameron/tells/logs/marl/test12/checkpoint3500 --runs 1
+uv run python run.py --command marl_eval --config confs/predator_prey/3a_game.yaml --model_dir logs/marl/test12/checkpoint3500 --runs 1
 ```
 - Evaluates a trained checkpoint for a specified number of runs  
 - Generates video outputs  
@@ -43,7 +60,7 @@ python run.py --command marl_eval --config confs/predator_prey/3a_game.yaml --mo
 
 ### Tensorboard 
 ```bash
-python tensorboard --logdir logs/marl/test12/
+uv run tensorboard --logdir logs/marl/test12/
 ```
 - Shows tensorboard log files for specified directory 
 
@@ -112,7 +129,7 @@ PredatorPreyEnv (Gym Environment)
 -Data collection can be run by using the collect_data command:
 
 ```bash
-python run.py --command marl_collect_data --config confs/predator_prey/3a_game.yaml --model_dir /home/cameron/tells/logs/marl/ppotest1/checkpoint10000 --runs 800 --n_workers 8
+uv run python run.py --command marl_collect_data --config confs/predator_prey/3a_game.yaml --model_dir logs/marl/ppotest1/checkpoint10000 --runs 800 --n_workers 8
 ```
 
 - runs is the number of epsisodes to collect data from
@@ -126,7 +143,7 @@ python run.py --command marl_collect_data --config confs/predator_prey/3a_game.y
 - Once data is collected, a model can be trained by running the following command: 
 
 ```bash
-python run.py --command belief_train --config confs/belief/test1.yaml
+uv run python run.py --command belief_train --config confs/belief/test1.yaml
 ```
 
 - Training data is loaded with the custom_dataset class inside learn/belief/custom_dataset.py. It is important to make sure that the .get_data() function properly loads in data
@@ -136,7 +153,7 @@ python run.py --command belief_train --config confs/belief/test1.yaml
 - Model evaluation can be done by running:
 
 ```bash
-python run.py --command belief_eval --model_dir /home/cameron/tells/logs/belief/_ppotest1_NN_ppotest2/lightning_logs/checkpoints/{epoch}_{val_loss} --config /home/cameron/tells/confs/belief/test1.yaml
+uv run python run.py --command belief_eval --model_dir logs/belief/_ppotest1_NN_ppotest2/lightning_logs/checkpoints/{epoch}_{val_loss} --config confs/belief/test1.yaml
 ```
 
 - This will create a directory called test_outputs inside the model_dir and save several test videos to it. In order to edit how the videos are created/saved look at .test_save() inside the belief model class
@@ -150,13 +167,13 @@ python run.py --command belief_eval --model_dir /home/cameron/tells/logs/belief/
 ## Testing Policy with a Belief Model
 
 ```bash
-python run.py --command marl_eval_belief --belief_dir /home/cameron/tells/logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config /home/cameron/tells/confs/belief/test1.yaml --config /home/cameron/tells/confs/predator_prey/3a_game.yaml --model_dir /home/cameron/tells/logs/marl/ppo_bc_ex/checkpoint4500/
+uv run python run.py --command marl_eval_belief --belief_dir logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config confs/belief/test1.yaml --config confs/predator_prey/3a_game.yaml --model_dir logs/marl/ppo_bc_ex/checkpoint4500/
 ```
 
 ## Training a Policy with a Belief Model
 
 ```bash
-python run.py --command marl_train_belief --belief_dir /home/cameron/tells/logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config /home/cameron/tells/confs/belief/test1.yaml --config /home/cameron/tells/confs/predator_prey/3a_game.yaml
+uv run python run.py --command marl_train_belief --belief_dir logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config confs/belief/test1.yaml --config confs/predator_prey/3a_game.yaml
 ```
 
 ## Baselines
@@ -164,17 +181,13 @@ python run.py --command marl_train_belief --belief_dir /home/cameron/tells/logs/
 ### Test Particle Filter
 
 ```bash
-python run.py --command pf_eval --model_dir /home/cameron/tells/logs/marl/ppo_bc/checkpoint2000 --config  /home/cameron/tells/confs/predator_prey/3a_game.yaml
+uv run python run.py --command pf_eval --model_dir logs/marl/ppo_bc/checkpoint2000 --config confs/predator_prey/3a_game.yaml
 ```
 
 ### Train IC3Net
 
 ```bash
-source .venv_ic3net/bin/activate
-```
-
-```bash
-python run.py --command ic3_train --config /home/cameron/tells/confs/predator_prey/3a_game_ic3.yaml
+uv run python run.py --command ic3_train --config confs/predator_prey/3a_game_ic3.yaml
 ```
 
 ---
@@ -182,5 +195,3 @@ python run.py --command ic3_train --config /home/cameron/tells/confs/predator_pr
 ## Notes
 - Designed for experimentation in decentralized, communication-restricted coordination tasks  
 - Modular structure allows extension to additional scenarios and agent behaviors  
-
-

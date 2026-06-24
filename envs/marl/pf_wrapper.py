@@ -93,13 +93,15 @@ class PFWrapper(MultiAgentEnv):
         terminated_all = False
         truncated_all = False
 
-        obs,rew,terminated,truncated,_ = self.env.step(action_dict)
+        obs,rew,terminated,truncated,env_infos = self.env.step(action_dict)
         rew = dict(rew)
 
         if self.eval:
             infos = {'target': obs['target']}
         else:
             infos = {}
+        for agent in self.agents:
+            infos[agent] = dict(env_infos.get(agent, {}))
 
         '''
         
@@ -489,12 +491,3 @@ class PFWrapper(MultiAgentEnv):
             cv2.waitKey(1)
 
         return frame
-
-
-
-
-
-
-
-
-#good, not there is a new object called self.new_obs. for each key in self.new_obs the observation is an estimation of the agent locations other than the agent that correlates to self.new_obs key. create me an updated function that plots these estimated locations on the same map with a slightly opaque color.

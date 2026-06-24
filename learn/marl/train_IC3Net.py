@@ -48,7 +48,7 @@ from learn.marl.train import (
 from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
-from controllers.marl_slot_controller import compute_slot_actions
+from controllers.predator_prey_control import compute_slot_actions
 
 
 '''

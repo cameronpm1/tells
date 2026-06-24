@@ -1,7 +1,150 @@
 import os
-import ray
-import torch
+import json
 import argparse
+
+
+def repo_root():
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def available_cpus():
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        return os.cpu_count() or 1
+
+
+def default_ray_base_dir():
+    for env_name in ('SLURM_TMPDIR', 'SCRATCH', 'TMPDIR'):
+        value = os.environ.get(env_name)
+        if value:
+            return os.path.join(value, 'tells_ray')
+    return os.path.join(repo_root(), '.ray')
+
+
+def set_torch_threads(args):
+    import torch
+
+    threads = args.torch_threads
+    if threads is None:
+        threads = min(32, max(1, available_cpus() // 4))
+    torch.set_num_threads(threads)
+    return threads
+
+
+def init_ray(args):
+    import ray
+
+    if ray.is_initialized():
+        return
+
+    ray_base = os.path.abspath(args.ray_base_dir or default_ray_base_dir())
+    ray_temp_dir = os.path.abspath(args.ray_temp_dir or os.path.join(ray_base, 'tmp'))
+    ray_spill_dir = os.path.abspath(args.ray_spill_dir or os.path.join(ray_base, 'spill'))
+    ray_working_dir = os.path.abspath(args.ray_working_dir or repo_root())
+
+    os.makedirs(ray_temp_dir, exist_ok=True)
+    os.makedirs(ray_spill_dir, exist_ok=True)
+
+    runtime_env = None
+    if not args.no_ray_runtime_env:
+        runtime_env = {
+            'working_dir': ray_working_dir,
+            'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
+            'excludes': ['.git/', 'logs/', 'data/', 'lab-logs/', '.ray/'],
+        }
+
+    ray_kwargs = {
+        'num_gpus': args.ray_gpus,
+        'include_dashboard': args.ray_dashboard,
+        'runtime_env': runtime_env,
+        '_temp_dir': ray_temp_dir,
+        '_system_config': {
+            'object_spilling_config': json.dumps({
+                'type': 'filesystem',
+                'params': {'directory_path': ray_spill_dir},
+            }),
+        },
+    }
+    if args.ray_cpus is not None:
+        ray_kwargs['num_cpus'] = args.ray_cpus
+
+    print('Initializing Ray:', {
+        'working_dir': ray_working_dir,
+        'temp_dir': ray_temp_dir,
+        'spill_dir': ray_spill_dir,
+        'num_cpus': ray_kwargs.get('num_cpus', 'auto'),
+        'num_gpus': args.ray_gpus,
+    })
+    ray.init(**ray_kwargs)
+
+
+def configure_marl_runtime(args):
+    import warnings
+
+    os.environ.setdefault('XDG_RUNTIME_DIR', '/tmp')
+    os.environ.setdefault('RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO', '0')
+    os.environ.setdefault('OMP_NUM_THREADS', '1')
+    os.environ.setdefault('MKL_NUM_THREADS', '1')
+    os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
+    os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
+    warnings.filterwarnings('ignore', category=DeprecationWarning)
+    warnings.filterwarnings('ignore', category=UserWarning, module='pygame')
+
+    threads = set_torch_threads(args)
+    init_ray(args)
+    return threads
+
+
+def rollout_overrides(args):
+    overrides = {}
+    alg_overrides = {}
+
+    if args.logdir is not None:
+        overrides['logdir'] = args.logdir
+
+    if args.auto_env_runners:
+        cpus = args.ray_cpus or available_cpus()
+        env_runners = max(1, cpus - args.reserve_cpus)
+        alg_overrides['nenvs'] = env_runners
+
+    if args.num_env_runners is not None:
+        alg_overrides['nenvs'] = args.num_env_runners
+
+    if args.num_envs_per_env_runner is not None:
+        alg_overrides['cpu_envs'] = args.num_envs_per_env_runner
+
+    if args.policy_gpus is not None:
+        alg_overrides['num_gpus'] = args.policy_gpus
+
+    if args.initial_checkpoint is not None:
+        alg_overrides['initial_checkpoint'] = args.initial_checkpoint
+
+    if len(alg_overrides) == 0:
+        return overrides
+
+    print('Applying rollout/resource overrides:', {'alg': alg_overrides})
+    overrides['alg'] = alg_overrides
+    return overrides
+
+
+def add_runtime_args(parser):
+    parser.add_argument('--torch_threads', type=int, default=None, help='Torch intra-op threads. Defaults to a conservative CPU fraction.')
+    parser.add_argument('--ray_cpus', type=int, default=None, help='Total CPUs exposed to Ray. Defaults to Ray auto-detection.')
+    parser.add_argument('--ray_gpus', type=float, default=0.0, help='Total GPUs exposed to Ray.')
+    parser.add_argument('--policy_gpus', type=float, default=None, help='GPUs assigned to the RLlib algorithm config.')
+    parser.add_argument('--ray_base_dir', type=str, default=None, help='Base directory for Ray temp and spill files.')
+    parser.add_argument('--ray_temp_dir', type=str, default=None, help='Ray temp directory.')
+    parser.add_argument('--ray_spill_dir', type=str, default=None, help='Ray object spill directory.')
+    parser.add_argument('--ray_working_dir', type=str, default=None, help='Directory shipped to Ray workers. Defaults to this repo.')
+    parser.add_argument('--ray_dashboard', action='store_true', help='Enable the Ray dashboard.')
+    parser.add_argument('--no_ray_runtime_env', action='store_true', help='Do not package a Ray runtime_env working_dir.')
+    parser.add_argument('--auto_env_runners', action='store_true', help='Use available CPUs to increase RLlib env runners without changing PPO/SAC training hyperparameters.')
+    parser.add_argument('--reserve_cpus', type=int, default=16, help='CPUs left for learner/system when --auto_env_runners is used.')
+    parser.add_argument('--num_env_runners', type=int, default=None, help='Override RLlib num_env_runners/alg.nenvs.')
+    parser.add_argument('--num_envs_per_env_runner', type=int, default=None, help='Override RLlib num_envs_per_env_runner/alg.cpu_envs.')
+    parser.add_argument('--logdir', type=str, default=None, help='Override the config logdir for a new training/eval output directory.')
+    parser.add_argument('--initial_checkpoint', type=str, default=None, help='Initialize MARL training from an existing RLlib checkpoint when the logdir has no checkpoint.')
 
 if __name__ == "__main__":
 
@@ -14,13 +157,15 @@ if __name__ == "__main__":
     parser.add_argument('--belief_dir', type=str, default=None, help='Model directory for belief model')
     parser.add_argument('--save_dir', type=str, default=None, help='Directory to save evaluation data to')
     parser.add_argument('--n_workers', type=int, default=1, help='Number of parallel workers to use for data collection')
+    parser.add_argument('--no_eval_videos', action='store_true', help='Skip GIF rendering during MARL eval.')
+    add_runtime_args(parser)
     args = parser.parse_args()
 
     if args.config is None:
         print('ERROR: No config file provided')
     elif args.command == 'rl_train':
 
-        torch.set_num_threads(9)
+        set_torch_threads(args)
         from learn.rl.train import train
 
         print('Training RL model with config:', args.config)
@@ -32,7 +177,7 @@ if __name__ == "__main__":
             exit()
         else:
 
-            torch.set_num_threads(9)
+            set_torch_threads(args)
             from evals.rl.eval import eval
 
             print('Evaluating RL model with config:', args.config)
@@ -46,7 +191,7 @@ if __name__ == "__main__":
             exit()
         else:
 
-            torch.set_num_threads(9)
+            set_torch_threads(args)
             from evals.rl.collect_eval_data import collect_data
 
             if args.save_dir is None:
@@ -61,84 +206,41 @@ if __name__ == "__main__":
 
     elif args.command == 'marl_train':
 
-        
-        import warnings
-        os.environ["XDG_RUNTIME_DIR"] = "/tmp"
-        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
-
+        configure_marl_runtime(args)
         from learn.marl.train import train
 
-        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
-                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
-                              'excludes': ['.git/',]
-                              },
-                 _temp_dir="/nvme0/ray_tmp",
-                 _system_config={
-                 "object_spilling_config": '{"type":"filesystem","params":{"directory_path":"/nvme0/ray_spill"}}'})
-
         print('Training marl policies with config:', args.config)
-        train(args.config)
+        train(args.config, kwargs=rollout_overrides(args))
 
     elif  args.command == 'marl_eval':
 
-        
-        import warnings
-        os.environ["XDG_RUNTIME_DIR"] = "/tmp"
-        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
-
+        configure_marl_runtime(args)
         from evals.marl.eval import eval
-
-        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
-                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
-                              'excludes': ['.git/',]
-                              } ) #,
-                # _temp_dir="/nvme1/ray_tmp")
 
         print('Evaluating RL model with config:', args.config)
         print('Loading model from:', args.model_dir)
-        eval(args.config,args.model_dir,args.runs)
+        eval(args.config,args.model_dir,args.runs, save_videos=not args.no_eval_videos)
 
     elif args.command == 'marl_eval_belief':
 
-        
-        import warnings
-        os.environ["XDG_RUNTIME_DIR"] = "/tmp"
-        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
-
+        configure_marl_runtime(args)
         from evals.marl.eval import eval
-
-        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
-                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
-                              'excludes': ['.git/',]
-                              } ) #,
-                # _temp_dir="/nvme1/ray_tmp")
 
         print('Evaluating RL model with config:', args.config)
         print('Loading model from:', args.model_dir)
-        eval(args.config,args.model_dir,args.runs,args.belief_dir,args.belief_config)
+        eval(
+            args.config,
+            args.model_dir,
+            args.runs,
+            args.belief_dir,
+            args.belief_config,
+            save_videos=not args.no_eval_videos,
+        )
 
     elif args.command == 'marl_train_belief':
 
-        
-        import warnings
-        os.environ["XDG_RUNTIME_DIR"] = "/tmp"
-        os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "0"
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        warnings.filterwarnings("ignore", category=UserWarning, module="pygame")
-
+        configure_marl_runtime(args)
         from learn.marl.train import train
-
-        ray.init(runtime_env={'working_dir': '/home/cameron/tells',
-                              'env_vars': {'PYTHONWARNINGS': 'ignore::DeprecationWarning'},
-                              'excludes': ['.git/',]
-                              } ) #,
-                # _temp_dir="/nvme1/ray_tmp")
 
         print('Training RL model with config:', args.config)
         print('Loading model from:', args.model_dir)
@@ -147,6 +249,7 @@ if __name__ == "__main__":
             'belief_config_dir': args.belief_config,
             'belief_dir' : args.belief_dir
         }
+        kwargs.update(rollout_overrides(args))
 
         train(args.config,kwargs=kwargs)
 
@@ -157,7 +260,7 @@ if __name__ == "__main__":
             exit()
         else:
 
-            torch.set_num_threads(9)
+            set_torch_threads(args)
             from evals.marl.collect_eval_data import collect_data
 
             if args.save_dir is None:
@@ -193,6 +296,7 @@ if __name__ == "__main__":
 
     elif 'pf_eval' == args.command:
 
+        configure_marl_runtime(args)
         from evals.marl.eval_pf import eval
 
         print('Evaluating PF model with config:', args.config)
@@ -201,14 +305,15 @@ if __name__ == "__main__":
 
     elif 'pf_train' == args.command:
 
+        configure_marl_runtime(args)
         from learn.marl.train_pf import train
 
-        print('Evaluating PF model with config:', args.config)
-        print('Loading model from:', args.model_dir)
+        print('Training PF model with config:', args.config)
         train(args.config,{})
 
     elif 'ic3_train' in args.command:
 
+        configure_marl_runtime(args)
         from learn.marl.train_IC3Net import train
 
         print('Training IC3Net model with config:', args.config)
@@ -221,9 +326,3 @@ if __name__ == "__main__":
         print('Evaluating IC3Net model with config:', args.config)
         print('Loading model from:', args.model_dir)
         eval(args.config,args.model_dir,args.runs)
-
-    #config_dir = args.config if args.config else 'confs/usv_configs/3b_game.yaml'
-    
-    #train(config_dir)
-    #collect_data(config_dir,'/home/cameron/tells/logs/circle_dist_noise/model.zip',master_dir='data/circle_obs',n_runs=1000)
-    #test(config_dir,'/home/cameron/tells/logs/circle_dist_noise/model.zip')
