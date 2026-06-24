@@ -49,7 +49,9 @@ class PredatorPreyEnv(gymnasium.Env):
             'hold_coverage_min': 0.45,
             'hold_close_fraction': 2.0 / 3.0,
             'hold_ring_min': 0.20,
-            'success_hold_steps': 15,
+            'success_hold_steps': 8,
+            'success_bonus': 750.0,
+            'progress_scale': 16.0,
         }
         if reward_kwargs is not None:
             self.reward_cfg.update(reward_kwargs)
@@ -145,6 +147,7 @@ class PredatorPreyEnv(gymnasium.Env):
         self.ts = 0
         self.hold_steps = 0
         self.last_metrics = {}
+        self.prev_target_goal_dist = None
 
         if seed is None:
             obs, info = self.env.reset()
@@ -320,8 +323,25 @@ class PredatorPreyEnv(gymnasium.Env):
         }
 
     def compute_team_reward(self, metrics: dict):
-        controller_action_reward = metrics.get('controller_action_reward', 0.0)
-        return float(self.reward_cfg['controller_action_scale'] * controller_action_reward)
+        team_reward = 0
+
+        if self.prev_target_goal_dist is None:
+            progress = 0.0
+        else:
+            progress = self.prev_target_goal_dist - metrics['target_goal_dist']
+        self.prev_target_goal_dist = metrics['target_goal_dist']
+        progress_rew = progress * self.reward_cfg['progress_scale']
+
+        if metrics.get('success'):
+            success_rew = self.reward_cfg['success_bonus']
+        else:
+            success_rew = 0
+
+        controller_action_rew = metrics.get('controller_action_reward', 0.0)
+        
+        team_reward = progress_rew + success_rew + controller_action_rew
+
+        return team_reward
 
 class ScenarioEnv(SimpleEnv):
 
