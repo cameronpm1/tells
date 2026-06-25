@@ -113,10 +113,6 @@ def _summarize_eval_rows(rows: list[dict]) -> dict[str, float]:
     metrics = {key: np.array([row[key] for row in rows], dtype=float) for key in rows[0]}
     return {
         'success_rate': float(metrics['success'].mean()),
-        'oob_rate': float(metrics['oob'].mean()),
-        'avg_max_hold': float(metrics['max_hold'].mean()),
-        'avg_best_dist': float(metrics['best_dist'].mean()),
-        'avg_final_dist': float(metrics['final_dist'].mean()),
         'avg_steps': float(metrics['steps'].mean()),
     }
 
@@ -145,10 +141,7 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
             obs, _, terminations, truncations, infos = env.step(action_dict)
             info = infos[cfg['env']['learned_agent_list'][0]]
 
-            best_dist = min(best_dist, float(info['target_goal_dist']))
-            max_hold = max(max_hold, int(info['hold_steps']))
             success = success or bool(info['success'])
-            oob = oob or bool(info['oob'])
             steps = t + 1
 
             if _episodes_done(terminations, truncations):
@@ -157,10 +150,6 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
         final_info = infos[cfg['env']['learned_agent_list'][0]]
         rows.append({
             'success': int(success),
-            'oob': int(oob),
-            'max_hold': max_hold,
-            'best_dist': best_dist,
-            'final_dist': float(final_info['target_goal_dist']),
             'steps': steps,
         })
 

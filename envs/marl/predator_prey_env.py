@@ -100,7 +100,7 @@ class PredatorPreyEnv(gymnasium.Env):
         filtered_actions = {}
         for agent_id, action in action_dict.items():
             filtered_actions[agent_id] = self.boundary_safe_action(agent_id, action)
-        controller_metrics = self.compute_controller_action_reward(filtered_actions)
+        controller_metrics = self.behavior_cloning_reward(filtered_actions)
         filtered_actions['target'] = self.boundary_safe_action(
             'target',
             self.adversary_controller(self.obs['target'], self.obs_map, self.controller_cfg),
@@ -281,6 +281,7 @@ class PredatorPreyEnv(gymnasium.Env):
         else:
             self.hold_steps = 0
 
+        hold_fraction = min(self.hold_steps/self.reward_cfg['success_hold_steps'],1.0)
         success = self.hold_steps >= int(self.reward_cfg['success_hold_steps'])
 
         metrics = {
@@ -289,13 +290,13 @@ class PredatorPreyEnv(gymnasium.Env):
             'close_fraction': close_fraction,
             'coverage_score': coverage_score,
             'hold': hold,
-            'hold_steps': self.hold_steps,
+            'hold_fraction': self.hold_steps,
             'success': success,
         }
         self.last_metrics = metrics
         return metrics
 
-    def compute_controller_action_reward(self, action_dict: dict) -> dict:
+    def behavior_cloning_reward(self, action_dict: dict) -> dict:
         controller_actions = compute_slot_actions(deepcopy(self.obs), self.obs_map)
         action_matches = []
 
@@ -325,21 +326,19 @@ class PredatorPreyEnv(gymnasium.Env):
     def compute_team_reward(self, metrics: dict):
         team_reward = 0
 
-        if self.prev_target_goal_dist is None:
-            progress = 0.0
-        else:
-            progress = self.prev_target_goal_dist - metrics['target_goal_dist']
-        self.prev_target_goal_dist = metrics['target_goal_dist']
-        progress_rew = progress * self.reward_cfg['progress_scale']
+        team_reward = (
+            - (self.reward_cfg['distance_scale'] * metrics['target_goal_dist'])
+            + (self.reward_cfg['slot_scale'] * metrics['controller_action_reward'])
+            + (self.reward_cfg['coverage_scale'] * metrics['coverage_score'])
+            - self.reward_cfg['step_cost']
+            #+ (self.reward_cfg['ring_scale'] * metrics['ring_score'])
+        )
 
-        if metrics.get('success'):
-            success_rew = self.reward_cfg['success_bonus']
-        else:
-            success_rew = 0
+        if metrics['hold']:
+            team_reward += self.reward_cfg['hold_scale'] #* (1.0 + metrics['hold_fraction'])
 
-        controller_action_rew = metrics.get('controller_action_reward', 0.0)
-        
-        team_reward = progress_rew + success_rew + controller_action_rew
+        if metrics['success']:
+            team_reward += self.reward_cfg['success_bonus']
 
         return team_reward
 
