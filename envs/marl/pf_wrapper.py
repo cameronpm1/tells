@@ -70,6 +70,7 @@ class PFWrapper(MultiAgentEnv):
                 prey_start_pos = prey_start,
                 agent_control_function = agent_control_function,
                 target_control_function = target_control_function,
+                **belief_kwargs
             )
             self.switch_count[agent] = 0
             self.observing_agent[agent] = 'target'
@@ -125,14 +126,14 @@ class PFWrapper(MultiAgentEnv):
             self.particle_filters[agent].propagate_all(new_obs[agent][self.obs_map['self']],goal)
 
             pf_obs = self.particle_filters[agent].get_observation()
-            new_obs[agent][6:8] = pf_obs['target']['pos'] - pos
-            start = 8
+            new_obs[agent][self.obs_map['target_pos']] = pf_obs['target']['pos'] - pos
+            start = self.obs_map['team'].start
 
             for i,key in enumerate(pf_obs.keys()):
                 # print(pf_obs)
                 if 'agent' in key:
-                    new_obs[agent][start:start+2] = pf_obs[key]['pos'] - pos
-                    start += 2
+                    new_obs[agent][start:start+self.dim] = pf_obs[key]['pos'] - pos
+                    start += self.dim
                 if self.switch_count[agent] == 0:
                     if i == 0:
                         self.min_confidence_agent[agent] = (key, pf_obs[key]['confidence'])
@@ -146,7 +147,7 @@ class PFWrapper(MultiAgentEnv):
 
             if self.switch_count[agent] >= 0:
                 if self.switch_count[agent] == self.switch_time or self.min_confidence_agent[agent][0] == self.observing_agent[agent]:
-                    self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][2:4])
+                    self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][self.obs_map['self_pos']])
                     self.switch_count[agent] = 0
                     if self.min_confidence_agent[agent][0] == self.observing_agent[agent]:
                         self.consecutive_agent_count[agent] += 1
@@ -155,9 +156,10 @@ class PFWrapper(MultiAgentEnv):
                     self.observing_agent[agent] = self.min_confidence_agent[agent][0]
                 else:
                     self.switch_count[agent] += 1
-            error = self.permutation_invariant_error(obs[agent][6:12], new_obs[agent][6:12])
+            state_slice = slice(self.obs_map['target_pos'].start,self.obs_map['team'].stop)
+            error = self.permutation_invariant_error(obs[agent][state_slice], new_obs[agent][state_slice])
             errors.append(error)
-            #print(error)
+
         avg_error = np.average(errors)
 
         #obs.pop("target", None)
@@ -168,7 +170,6 @@ class PFWrapper(MultiAgentEnv):
 
         terminated["__all__"] = all(terminated.values())
         truncated["__all__"] = all(truncated.values())
-        #print(obs.keys(),rew.keys(),terminated.keys(),truncated.keys(),_.keys())
         
         infos['__common__'] = {}
         infos['__common__']['raw_reward'] = sum(rew.values())
@@ -195,8 +196,8 @@ class PFWrapper(MultiAgentEnv):
             start_dict = {}
             for agent2 in self.agents:
                 if agent != agent2:
-                    start_dict[agent2] = obs[agent2][2:4] #+ np.random.normal(0, 0.1, 2)
-            prey_start = obs['target'][2:4]
+                    start_dict[agent2] = obs[agent2][self.obs_map['self_pos']] #+ np.random.normal(0, 0.1, 2)
+            prey_start = obs['target'][self.obs_map['self_pos']]
             self.particle_filters[agent].reset(
                 agent_start_pos = start_dict,
                 prey_start_pos = prey_start,
@@ -230,8 +231,8 @@ class PFWrapper(MultiAgentEnv):
         '''
 
         # Reshape to (N, 2, 3)
-        pred = pred[2:].reshape(-1, 2, 2)
-        target = target[2:].reshape(-1, 2, 2)
+        pred = pred[self.dim:].reshape(-1, 2, self.dim)
+        target = target[self.dim:].reshape(-1, 2, self.dim)
 
         # Direct assignment distances
         direct = (
@@ -245,7 +246,7 @@ class PFWrapper(MultiAgentEnv):
             np.linalg.norm(pred[:, 1] - target[:, 0], axis=1)
         )
 
-        static = np.linalg.norm(pred[:2] - target[:2])
+        static = np.linalg.norm(pred[:self.dim] - target[:self.dim])
 
         # Take minimum per sample, then sum batch
         return np.minimum(direct, swapped).sum() + static
