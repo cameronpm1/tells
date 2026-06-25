@@ -74,16 +74,12 @@ env:
     hold_ring_min: 0.05
     success_hold_steps: 8
     success_bonus: 750.0
-<<<<<<< HEAD
-    progress_scale: 60
-=======
     progress_scale: 16
     step_cost: 0.05
     coverage_scale: 2.0
     slot_scale: 0.5 #18.0
     distance_scale: 2.0
     hold_scale: 20.0
->>>>>>> origin/main
 
 sim:
   n: 3 #number of pursuit agents
