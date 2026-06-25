@@ -5,3 +5,6 @@
 [submodule "external/pybullet-drones"]
 	path = external/pybullet-drones
 	url = https://github.com/utiasDSL/gym-pybullet-drones.git
+[submodule "external/football"]
+	path = external/football
+	url = https://github.com/google-research/football.git

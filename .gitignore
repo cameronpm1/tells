@@ -1,5 +1,8 @@
-.venv/
-.venv_ic3net/
+**/__pycache__/
 logs/
+.venv/
+outputs/
+token.txt
+misc/
+.ray/
 data/
-__pycache__/
