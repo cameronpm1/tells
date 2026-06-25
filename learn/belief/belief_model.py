@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader
 
 from util.util import *
 from learn.belief.models import *
-from learn.rl.custom_callbacks import create_image
 from learn.belief.custom_dataset import CustomDataset
 
 import numpy as np

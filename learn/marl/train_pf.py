@@ -34,7 +34,7 @@ from ray.rllib.utils.metrics import (
 from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
-from controllers.marl_slot_controller import compute_slot_actions
+from controllers.predator_prey_control import compute_slot_actions
 from learn.marl.callbacks import CurriculumCallback, LogRawEpisodeReturn
 
 try:
@@ -90,6 +90,15 @@ def _save_checkpoint(algo, checkpoint_dir: str):
         shutil.rmtree(checkpoint_dir)
     algo.save(checkpoint_dir=checkpoint_dir)
 
+def _build_algo(algo_config, logger_creator=None):
+    try:
+        return algo_config.build_algo(logger_creator=logger_creator)
+    except TypeError as exc:
+        if 'logger_creator' not in str(exc):
+            raise
+        print('RLlib build_algo does not accept logger_creator; using default logger.')
+        return algo_config.build_algo()
+
 def _episodes_done(terminations: dict, truncations: dict) -> bool:
     return all(bool(v) for v in terminations.values()) or all(bool(v) for v in truncations.values())
 
@@ -97,10 +106,6 @@ def _summarize_eval_rows(rows: list[dict]) -> dict[str, float]:
     metrics = {key: np.array([row[key] for row in rows], dtype=float) for key in rows[0]}
     return {
         'success_rate': float(metrics['success'].mean()),
-        'oob_rate': float(metrics['oob'].mean()),
-        'avg_max_hold': float(metrics['max_hold'].mean()),
-        'avg_best_dist': float(metrics['best_dist'].mean()),
-        'avg_final_dist': float(metrics['final_dist'].mean()),
         'avg_steps': float(metrics['steps'].mean()),
     }
 
@@ -112,10 +117,7 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
         env = make_marl_env(cfg, seed=int(cfg['seed']) + seed_offset, wrap=None)
         obs, _ = env.reset()
 
-        best_dist = float('inf')
-        max_hold = 0
         success = False
-        oob = False
         steps = 0
 
         for t in range(cfg['env']['max_episode_length']):
@@ -129,10 +131,7 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
             obs, _, terminations, truncations, infos = env.step(action_dict)
             info = infos[cfg['env']['learned_agent_list'][0]]
 
-            best_dist = min(best_dist, float(info['target_goal_dist']))
-            max_hold = max(max_hold, int(info['hold_steps']))
             success = success or bool(info['success'])
-            oob = oob or bool(info['oob'])
             steps = t + 1
 
             if _episodes_done(terminations, truncations):
@@ -141,10 +140,6 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
         final_info = infos[cfg['env']['learned_agent_list'][0]]
         rows.append({
             'success': int(success),
-            'oob': int(oob),
-            'max_hold': max_hold,
-            'best_dist': best_dist,
-            'final_dist': float(final_info['target_goal_dist']),
             'steps': steps,
         })
 
@@ -167,7 +162,7 @@ def _collect_slot_controller_dataset(cfg: dict, episodes: int):
         trajectory = []
 
         for _ in range(cfg['env']['max_episode_length']):
-            expert_actions = compute_slot_actions(env.env.unwrapped.world)
+            expert_actions = compute_slot_actions(obs, env.obs_map)
             predator_obs = {
                 agent: np.asarray(obs[agent], dtype=np.float32).copy()
                 for agent in learned_agents
@@ -332,7 +327,7 @@ def train(config_path: str, kwargs=None):
 
     algo_config = make_ray_config(cfg)
 
-    algo_build = algo_config.build_algo(logger_creator=logger_creator)
+    algo_build = _build_algo(algo_config, logger_creator=logger_creator)
 
     resume_dir, resume_iter = _find_latest_checkpoint(logdir)
     start_iter = 0
@@ -390,8 +385,6 @@ def make_ray_config(
     ------
     ray_config class
     '''
-
-    belief_kwargs = {}
 
     #make env function 
     def env_maker(config):

@@ -46,6 +46,7 @@ def eval(
     )
 
     if checkpoint_dir is not None:
+        checkpoint_dir = os.path.abspath(checkpoint_dir)
         algo_config = make_ray_config(cfg)
         algo = algo_config.build_algo()
         algo.restore(checkpoint_dir)

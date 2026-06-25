@@ -11,6 +11,7 @@ from mpe2._mpe_utils.core import Agent, Landmark
 from mpe2._mpe_utils.scenario import BaseScenario
 from mpe2._mpe_utils.simple_env import SimpleEnv, make_env
 from pettingzoo.utils.conversions import parallel_wrapper_fn
+from controllers.predator_prey_control import compute_slot_actions
 
 GRID_SIZE = 10
 
@@ -39,20 +40,8 @@ class PredatorPreyEnv(gymnasium.Env):
         self.local_observations = local_observations
         self.env.unwrapped.local_observations = local_observations
         self.reward_cfg = {
-            'distance_scale': 2.0,
-            'chase_scale': 2.0,
-            'progress_scale': 16.0,
-            'approach_scale': 2.5,
-            'containment_scale': 2.0,
-            'coverage_scale': 2.0,
-            'slot_scale': 18.0,
-            'hold_scale': 20.0,
-            'success_bonus': 750.0,
+            'controller_action_scale': 5.0,
             'oob_penalty': 3000.0,
-            'uncontrolled_goal_scale': 12.0,
-            'touch_penalty_scale': 3.0,
-            'step_cost': 0.05,
-            'goal_focus_temp': 1.0,
             'surround_radius': 1.8,
             'ideal_radius': 1.5,
             'radius_tolerance': 0.55,
@@ -60,14 +49,9 @@ class PredatorPreyEnv(gymnasium.Env):
             'hold_coverage_min': 0.45,
             'hold_close_fraction': 2.0 / 3.0,
             'hold_ring_min': 0.20,
-            'success_hold_steps': 15,
-            'slot_switch_distance': 3.0,
-            'slot_push_radius': 2.1,
-            'slot_push_offset': 1.05,
-            'slot_flank_radius': 1.65,
-            'slot_goal_backoff': 1.20,
-            'slot_goal_lateral': 1.25,
-            'slot_tolerance': 0.85,
+            'success_hold_steps': 8,
+            'success_bonus': 750.0,
+            'progress_scale': 16.0,
         }
         if reward_kwargs is not None:
             self.reward_cfg.update(reward_kwargs)
@@ -87,7 +71,6 @@ class PredatorPreyEnv(gymnasium.Env):
 
         self.ts = 0
         self.hold_steps = 0
-        self.prev_target_goal_dist = None
         self.last_metrics = {}
 
         self.obs_map = {
@@ -117,6 +100,7 @@ class PredatorPreyEnv(gymnasium.Env):
         filtered_actions = {}
         for agent_id, action in action_dict.items():
             filtered_actions[agent_id] = self.boundary_safe_action(agent_id, action)
+        controller_metrics = self.behavior_cloning_reward(filtered_actions)
         filtered_actions['target'] = self.boundary_safe_action(
             'target',
             self.adversary_controller(self.obs['target'], self.obs_map, self.controller_cfg),
@@ -126,6 +110,7 @@ class PredatorPreyEnv(gymnasium.Env):
         self.obs = obs
 
         metrics = self.compute_team_metrics()
+        metrics.update(controller_metrics)
         team_reward = self.compute_team_reward(metrics)
         for agent in self.agents:
             rewards[agent] = team_reward
@@ -138,8 +123,9 @@ class PredatorPreyEnv(gymnasium.Env):
         oob = self.out_of_bounds()
         metrics['oob'] = oob
         if oob:
+            team_reward -= self.reward_cfg['oob_penalty']
             for agent in self.agents:
-                rewards[agent] -= self.reward_cfg['oob_penalty']
+                rewards[agent] = team_reward
             for agent in terminations:
                 terminations[agent] = True
             terminations["__all__"] = True
@@ -160,8 +146,8 @@ class PredatorPreyEnv(gymnasium.Env):
     def reset(self, *, seed=None, options=None):
         self.ts = 0
         self.hold_steps = 0
-        self.prev_target_goal_dist = None
         self.last_metrics = {}
+        self.prev_target_goal_dist = None
 
         if seed is None:
             obs, info = self.env.reset()
@@ -171,7 +157,6 @@ class PredatorPreyEnv(gymnasium.Env):
 
         self.obs = obs
         metrics = self.compute_team_metrics()
-        self.prev_target_goal_dist = metrics['target_goal_dist']
         self.last_metrics = metrics
 
         
@@ -248,14 +233,12 @@ class PredatorPreyEnv(gymnasium.Env):
 
         predator_target_vecs = predator_positions - target_pos
         predator_target_dists = np.linalg.norm(predator_target_vecs, axis=1)
-        touch_radius = 2.0 * predators[0].size
-        touch_penalty = float(np.mean(np.clip(touch_radius - predator_target_dists, 0.0, None)))
 
         radius_error = np.abs(predator_target_dists - self.reward_cfg['ideal_radius'])
         ring_score = float(
             np.mean(
                 np.clip(
-                    1.0 - radius_error / self.reward_cfg['radius_tolerance'], #something like this?
+                    1.0 - radius_error / self.reward_cfg['radius_tolerance'],
                     0.0,
                     1.0,
                 )
@@ -285,37 +268,20 @@ class PredatorPreyEnv(gymnasium.Env):
                 )
             )
 
-        if target_goal_dist > 1e-6:
-            goal_dir = goal_vec / target_goal_dist
-            alignments = []
-            for predator_vec, predator_dist in zip(predator_target_vecs, predator_target_dists):
-                if predator_dist < 1e-6:
-                    alignments.append(1.0)
-                    continue
-                alignments.append(np.dot(predator_vec / predator_dist, -goal_dir))
-            push_alignment = float((np.mean(alignments) + 1.0) / 2.0)
-        else:
-            push_alignment = 1.0
-
         hold = (
             # "Hold" is stricter than "near the goal": the prey has to be near the
-            # target and still look controlled by the formation.
+            # target and still look contained by the predators.
             target_goal_dist <= self.reward_cfg['hold_goal_radius']
             and close_fraction >= self.reward_cfg['hold_close_fraction']
             and coverage_score >= self.reward_cfg['hold_coverage_min']
             and ring_score >= self.reward_cfg['hold_ring_min']
-        )
-        slot_score = self.compute_slot_score(
-            predator_positions=predator_positions,
-            target_pos=target_pos,
-            goal_pos=goal_pos,
-            target_goal_dist=target_goal_dist,
         )
         if hold:
             self.hold_steps += 1
         else:
             self.hold_steps = 0
 
+        hold_fraction = min(self.hold_steps/self.reward_cfg['success_hold_steps'],1.0)
         success = self.hold_steps >= int(self.reward_cfg['success_hold_steps'])
 
         metrics = {
@@ -323,127 +289,58 @@ class PredatorPreyEnv(gymnasium.Env):
             'ring_score': ring_score,
             'close_fraction': close_fraction,
             'coverage_score': coverage_score,
-            'push_alignment': push_alignment,
-            'slot_score': slot_score,
-            'avg_predator_target_dist': float(np.mean(predator_target_dists)),
-            'touch_penalty': touch_penalty,
             'hold': hold,
-            'hold_steps': self.hold_steps,
+            'hold_fraction': self.hold_steps,
             'success': success,
         }
         self.last_metrics = metrics
         return metrics
 
-    def compute_slot_score(
-        self,
-        predator_positions: np.ndarray,
-        target_pos: np.ndarray,
-        goal_pos: np.ndarray,
-        target_goal_dist: float,
-    ) -> float:
-        goal_vec = goal_pos - target_pos
-        if target_goal_dist > 1e-6:
-            forward = goal_vec / target_goal_dist
+    def behavior_cloning_reward(self, action_dict: dict) -> dict:
+        controller_actions = compute_slot_actions(deepcopy(self.obs), self.obs_map)
+        action_matches = []
+
+        for agent in self.agents:
+            if agent not in action_dict or agent not in controller_actions:
+                continue
+
+            learned_action = int(action_dict[agent])
+            controller_action = self.boundary_safe_action(
+                agent,
+                int(controller_actions[agent]),
+            )
+            action_matches.append(float(learned_action == controller_action))
+
+        if len(action_matches) == 0:
+            controller_action_match = 0.0
         else:
-            forward = np.array([1.0, 0.0])
-        lateral = np.array([-forward[1], forward[0]])
+            controller_action_match = float(np.mean(action_matches))
+        controller_action_error = 1.0 - controller_action_match
 
-        if target_goal_dist > self.reward_cfg['slot_switch_distance']:
-            # Far away from goal we score a push-and-flank shape behind the prey.
-            slots = np.array(
-                [
-                    target_pos - (forward * self.reward_cfg['slot_push_radius']),
-                    target_pos
-                    - (forward * self.reward_cfg['slot_push_offset'])
-                    + (lateral * self.reward_cfg['slot_flank_radius']),
-                    target_pos
-                    - (forward * self.reward_cfg['slot_push_offset'])
-                    - (lateral * self.reward_cfg['slot_flank_radius']),
-                ]
-            )
-        else:
-            # Near the goal we switch from "push it there" to "keep it there".
-            slots = np.array(
-                [
-                    goal_pos - (forward * self.reward_cfg['slot_goal_backoff']),
-                    goal_pos + (lateral * self.reward_cfg['slot_goal_lateral']),
-                    goal_pos - (lateral * self.reward_cfg['slot_goal_lateral']),
-                ]
-            )
-
-        best_average_distance = np.inf
-        for slot_perm in permutations(range(len(slots))):
-            distances = [
-                np.linalg.norm(predator_positions[idx] - slots[slot_idx])
-                for idx, slot_idx in enumerate(slot_perm)
-            ]
-            best_average_distance = min(best_average_distance, float(np.mean(distances)))
-
-        return float(
-            np.clip(
-                1.0 - (best_average_distance / self.reward_cfg['slot_tolerance']),
-                0.0,
-                1.0,
-            )
-        )
+        return {
+            'controller_action_error': controller_action_error,
+            'controller_action_match': controller_action_match,
+            'controller_action_reward': controller_action_match,
+        }
 
     def compute_team_reward(self, metrics: dict):
-        if self.prev_target_goal_dist is None:
-            progress = 0.0
-        else:
-            progress = self.prev_target_goal_dist - metrics['target_goal_dist']
-        self.prev_target_goal_dist = metrics['target_goal_dist']
-
-        near_goal_weight = float(
-            np.exp(-metrics['target_goal_dist'] / self.reward_cfg['goal_focus_temp'])
-        )
-        hold_fraction = min(
-            metrics['hold_steps'] / max(float(self.reward_cfg['success_hold_steps']), 1.0),
-            1.0,
-        )
-        containment_weight = 0.25 + (0.75 * near_goal_weight)
-        containment_score = (
-            metrics['ring_score'] + metrics['close_fraction'] - 1.0
-        )
-        coverage_score = max(metrics['coverage_score'] - 0.5, 0.0)
-        approach_score = metrics['push_alignment'] - 0.5
-        control_score = max(
-            metrics['slot_score'],
-            0.5 * (metrics['ring_score'] + metrics['close_fraction']),
-        )
+        team_reward = 0
 
         team_reward = (
-            (self.reward_cfg['progress_scale'] * progress)
             - (self.reward_cfg['distance_scale'] * metrics['target_goal_dist'])
-            - (self.reward_cfg['chase_scale'] * metrics['avg_predator_target_dist'])
-            - (self.reward_cfg['touch_penalty_scale'] * metrics['touch_penalty'])
-            + (self.reward_cfg['approach_scale'] * approach_score)
-            + (self.reward_cfg['slot_scale'] * metrics['slot_score'])
-            - (
-                self.reward_cfg['uncontrolled_goal_scale']
-                * near_goal_weight
-                * (1.0 - control_score)
-            )
-            + (
-                self.reward_cfg['containment_scale']
-                * containment_weight
-                * containment_score
-            )
-            + (
-                self.reward_cfg['coverage_scale']
-                * containment_weight
-                * coverage_score
-            )
+            + (self.reward_cfg['slot_scale'] * metrics['controller_action_reward'])
+            + (self.reward_cfg['coverage_scale'] * metrics['coverage_score'])
             - self.reward_cfg['step_cost']
+            #+ (self.reward_cfg['ring_scale'] * metrics['ring_score'])
         )
 
         if metrics['hold']:
-            team_reward += self.reward_cfg['hold_scale'] * (1.0 + hold_fraction)
+            team_reward += self.reward_cfg['hold_scale'] #* (1.0 + metrics['hold_fraction'])
 
         if metrics['success']:
             team_reward += self.reward_cfg['success_bonus']
 
-        return float(team_reward)
+        return team_reward
 
 class ScenarioEnv(SimpleEnv):
 

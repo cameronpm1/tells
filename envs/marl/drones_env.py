@@ -138,6 +138,22 @@ class PredatorPreyAviary(BaseRLAviary):
         }
         self.goal_rel = True
 
+        self.action_library = {
+            0:  np.array([0.0, 0.0, 0.0, 0.0]),
+
+            1:  np.array([1.0, 0.0, 0.0, self.base_speed]),
+            2:  np.array([1 / np.sqrt(2), 1 / np.sqrt(2), 0.0, self.base_speed]),
+            3:  np.array([0.0, 1.0, 0.0, self.base_speed]),
+            4:  np.array([-1 / np.sqrt(2), 1 / np.sqrt(2), 0.0, self.base_speed]),
+            5:  np.array([-1.0, 0.0, 0.0, self.base_speed]),
+            6:  np.array([-1 / np.sqrt(2), -1 / np.sqrt(2), 0.0, self.base_speed]),
+            7:  np.array([0.0, -1.0, 0.0, self.base_speed]),
+            8:  np.array([1 / np.sqrt(2), -1 / np.sqrt(2), 0.0, self.base_speed]),
+
+            9:  np.array([0.0, 0.0, 1.0, self.base_speed]),
+            10: np.array([0.0, 0.0, -1.0, self.base_speed]),
+        }
+
     def _initialize_box_state(self):
         """
         Initialize box point states.
@@ -207,12 +223,7 @@ class PredatorPreyAviary(BaseRLAviary):
         Learner only controls protector drones.
         The adversarial drone action is injected internally.
         """
-        return spaces.Box(
-            low=-1.0,
-            high=1.0,
-            shape=(self.n_agents, 3),
-            dtype=np.float32,
-        )
+        return spaces.Discrete(len(self.action_library))
 
     def _observation_space(self,agent):
         """
@@ -299,11 +310,11 @@ class PredatorPreyAviary(BaseRLAviary):
 
         action = []
         for agent in self.agents:
-            action.append(action_dict[agent])
+            action.append(self.action_library[action_dict[agent]])
 
-        action = np.asarray(action, dtype=np.float32)
-        speed = np.ones((self.n_agents, 1), dtype=np.float32) * self.base_speed
-        action = np.hstack([action, speed])
+        #action = np.asarray(action, dtype=np.float32)
+        #speed = np.ones((self.n_agents, 1), dtype=np.float32) * self.base_speed
+        #action = np.hstack([action, speed])
 
         dt = 1.0 / float(getattr(self, "CTRL_FREQ", 30))
         self._propagate_box_points(dt)

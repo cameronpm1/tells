@@ -90,6 +90,22 @@ def _save_checkpoint(algo, checkpoint_dir: str):
         shutil.rmtree(checkpoint_dir)
     algo.save(checkpoint_dir=checkpoint_dir)
 
+def _build_algo(algo_config, logger_creator=None):
+    try:
+        return algo_config.build_algo(logger_creator=logger_creator)
+    except TypeError as exc:
+        if 'logger_creator' not in str(exc):
+            raise
+        print('RLlib build_algo does not accept logger_creator; using default logger.')
+        return algo_config.build_algo()
+
+def _deep_update(base: dict, updates: dict):
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_update(base[key], value)
+        else:
+            base[key] = value
+
 def _episodes_done(terminations: dict, truncations: dict) -> bool:
     return all(bool(v) for v in terminations.values()) or all(bool(v) for v in truncations.values())
 
@@ -97,10 +113,6 @@ def _summarize_eval_rows(rows: list[dict]) -> dict[str, float]:
     metrics = {key: np.array([row[key] for row in rows], dtype=float) for key in rows[0]}
     return {
         'success_rate': float(metrics['success'].mean()),
-        'oob_rate': float(metrics['oob'].mean()),
-        'avg_max_hold': float(metrics['max_hold'].mean()),
-        'avg_best_dist': float(metrics['best_dist'].mean()),
-        'avg_final_dist': float(metrics['final_dist'].mean()),
         'avg_steps': float(metrics['steps'].mean()),
     }
 
@@ -129,10 +141,7 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
             obs, _, terminations, truncations, infos = env.step(action_dict)
             info = infos[cfg['env']['learned_agent_list'][0]]
 
-            best_dist = min(best_dist, float(info['target_goal_dist']))
-            max_hold = max(max_hold, int(info['hold_steps']))
             success = success or bool(info['success'])
-            oob = oob or bool(info['oob'])
             steps = t + 1
 
             if _episodes_done(terminations, truncations):
@@ -141,10 +150,6 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
         final_info = infos[cfg['env']['learned_agent_list'][0]]
         rows.append({
             'success': int(success),
-            'oob': int(oob),
-            'max_hold': max_hold,
-            'best_dist': best_dist,
-            'final_dist': float(final_info['target_goal_dist']),
             'steps': steps,
         })
 
@@ -308,11 +313,11 @@ def _maybe_pretrain_policy(algo, cfg: dict, logdir: str) -> bool:
 def train(config_path: str, kwargs=None):
 
     cfg = load_config(config_path)
+    if kwargs is not None:
+        _deep_update(cfg, kwargs)
+
     logdir = os.path.abspath(cfg['logdir'])
     cfg['logdir'] = logdir
-    if kwargs is not None:
-        for key, value in kwargs.items():
-            cfg[key] = value
     if not os.path.exists(logdir):
         print('Save directory not found, creating path ...')
         #logger.info("Save directory not found, creating path ...")
@@ -333,7 +338,7 @@ def train(config_path: str, kwargs=None):
 
     algo_config = make_ray_config(cfg)
 
-    algo_build = algo_config.build_algo(logger_creator=logger_creator)
+    algo_build = _build_algo(algo_config, logger_creator=logger_creator)
 
     resume_dir, resume_iter = _find_latest_checkpoint(logdir)
     start_iter = 0
