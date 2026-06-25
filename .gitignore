@@ -1,4 +1,8 @@
-.venv/
+**/__pycache__/
 logs/
+.venv/
+outputs/
+token.txt
+misc/
+.ray/
 data/
-__pycache__/
