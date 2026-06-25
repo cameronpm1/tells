@@ -59,10 +59,16 @@ class CirclePass5v1Env(gym.Env):
         right defender tries to steal the ball.
     """
 
-    def __init__(self, render=False):
+    def __init__(
+            self, 
+            agents,
+            render=False
+        ):
         print("[CirclePass5v1Env] __init__ start", flush=True)
         super().__init__()
 
+        self.agents = agents
+        self.n_agents = len(agents)
         self.n_left = 6
         self.n_right = 2
         self.n_agents = self.n_left + self.n_right
@@ -113,10 +119,11 @@ class CirclePass5v1Env(gym.Env):
 
         actions = [int(a) for a in actions]
 
-        print("[CirclePass5v1Env] before self.env.step", actions, flush=True)
-        actions[0:2] = [0,0]
+        actions[0:2] = [0,0] # set goalie actions to 0
         obs, base_reward, done, info = self.env.step(actions)
-        print("[CirclePass5v1Env] after self.env.step", flush=True)
+        new_obs = {}
+        for agent in self.agents:
+            new_obs[agent] = [] #fill in
 
         shaped_rewards, drill_done, drill_info = self._compute_drill_rewards(obs)
 
@@ -269,10 +276,10 @@ def build_scenario(builder):
     builder.SetBallPosition(passer_positions[0][0], passer_positions[0][1])
 
     builder.SetTeam(Team.e_Left)
-    builder.AddPlayer(-1.0, 0.0, e_PlayerRole_GK, lazy=True, controllable=True)
+    builder.AddPlayer(-10.0, 0.0, e_PlayerRole_GK, lazy=True, controllable=True)
 
     builder.SetTeam(Team.e_Right)
-    builder.AddPlayer(1.0, 0.0, e_PlayerRole_GK, lazy=True, controllable=True)
+    builder.AddPlayer(10.0, 0.0, e_PlayerRole_GK, lazy=True, controllable=True)
 
     builder.SetTeam(Team.e_Left)
     for x, y in passer_positions:

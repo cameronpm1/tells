@@ -2,7 +2,6 @@ import cv2
 import time
 import numpy as np
 
-from controllers.boat_mpc import boatMPC
 from util.util import mkdir, load_config
 from envs.marl.football_env import CirclePass5v1Env
 from envs.marl.drones_env import PredatorPreyAviary
@@ -67,7 +66,8 @@ def drone_test():
     env.close()
 
 def football_test():
-    env = CirclePass5v1Env(render=True)
+    agents = ['agent0','agent1','agent2','agent3','agent4']
+    env = CirclePass5v1Env(agents=agents, render=True)
 
     obs = env.reset()
     images = []
