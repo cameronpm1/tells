@@ -34,7 +34,7 @@ from ray.rllib.utils.metrics import (
 from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
-from controllers.marl_slot_controller import compute_slot_actions
+from controllers.predator_prey_control import compute_slot_actions
 from learn.marl.callbacks import CurriculumCallback, LogRawEpisodeReturn
 
 try:
@@ -89,6 +89,15 @@ def _save_checkpoint(algo, checkpoint_dir: str):
     if os.path.exists(checkpoint_dir):
         shutil.rmtree(checkpoint_dir)
     algo.save(checkpoint_dir=checkpoint_dir)
+
+def _build_algo(algo_config, logger_creator=None):
+    try:
+        return algo_config.build_algo(logger_creator=logger_creator)
+    except TypeError as exc:
+        if 'logger_creator' not in str(exc):
+            raise
+        print('RLlib build_algo does not accept logger_creator; using default logger.')
+        return algo_config.build_algo()
 
 def _episodes_done(terminations: dict, truncations: dict) -> bool:
     return all(bool(v) for v in terminations.values()) or all(bool(v) for v in truncations.values())
@@ -167,7 +176,7 @@ def _collect_slot_controller_dataset(cfg: dict, episodes: int):
         trajectory = []
 
         for _ in range(cfg['env']['max_episode_length']):
-            expert_actions = compute_slot_actions(env.env.unwrapped.world)
+            expert_actions = compute_slot_actions(obs, env.obs_map)
             predator_obs = {
                 agent: np.asarray(obs[agent], dtype=np.float32).copy()
                 for agent in learned_agents
@@ -332,7 +341,7 @@ def train(config_path: str, kwargs=None):
 
     algo_config = make_ray_config(cfg)
 
-    algo_build = algo_config.build_algo(logger_creator=logger_creator)
+    algo_build = _build_algo(algo_config, logger_creator=logger_creator)
 
     resume_dir, resume_iter = _find_latest_checkpoint(logdir)
     start_iter = 0

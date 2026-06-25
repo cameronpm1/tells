@@ -52,10 +52,10 @@ def compute_slot_actions(
     #if obs is dict, then recieved full marl obs
     if isinstance(obs,dict):
         target_pos = obs['agent0'][obs_map['target_pos']] + obs['agent0'][obs_map['self_pos']]
+        agent_names = [name for name in obs.keys() if 'agent' in name]
         predators = []
-        for name in obs.keys():
-            if 'agent' in name:
-                predators.append(obs[name][obs_map['self_pos']])
+        for name in agent_names:
+            predators.append(obs[name][obs_map['self_pos']])
         goal_pos = obs['agent0'][obs_map['target_goal']] + obs['agent0'][obs_map['self_pos']]
     else:
         target_pos = obs[obs_map['target_pos']] + obs[obs_map['self_pos']]
@@ -99,9 +99,8 @@ def compute_slot_actions(
     assigned_slots = _assign_slots(predators, slots)
 
     if isinstance(obs,dict):
-        obs.pop('target')
         actions = {}
-        for i,name in enumerate(obs.keys()):
+        for i, name in enumerate(agent_names):
             actions[name] = vec_to_action(assigned_slots[i] - obs[name][obs_map['self_pos']])
     else:
         actions = vec_to_action(assigned_slots[-1] - obs[obs_map['self_pos']])

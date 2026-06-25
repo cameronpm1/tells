@@ -1,7 +1,6 @@
 import yaml
 import numpy
 from typing import Optional
-from gym_pybullet_drones.utils.enums import ActionType
 
 from envs.marl.pf_wrapper import PFWrapper
 from envs.marl.rllib_wrapper import RLLibWrapper
@@ -116,6 +115,8 @@ def make_drones_env(
     wrap:bool
         if True wraps env in rllib wrapper
     '''
+    from gym_pybullet_drones.utils.enums import ActionType
+    from envs.marl.drones_env import PredatorPreyAviary
 
     env = PredatorPreyAviary(
         agent_list=config['env']['agent_list'],

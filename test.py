@@ -198,7 +198,7 @@ def drone_test():
         # All zeros means commanded hover/no motion.
         action = {}
         for agent in env.agents:
-            action[agent] = np.zeros((3,))
+            action[agent] = 0
 
         obs, reward, terminated, truncated, info = env.step(action)
 

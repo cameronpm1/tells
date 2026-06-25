@@ -63,20 +63,8 @@ env:
     prey_avoid_radius: 2.4
     prey_avoid_gain: 1.5
   reward_kwargs:
-    distance_scale: 2.0
-    chase_scale: 2.0
-    progress_scale: 16.0
-    approach_scale: 2.5
-    containment_scale: 2.0
-    coverage_scale: 2.0
-    slot_scale: 18.0
-    hold_scale: 20.0
-    success_bonus: 750.0
+    controller_action_scale: 5.0
     oob_penalty: 3000.0
-    uncontrolled_goal_scale: 12.0
-    touch_penalty_scale: 3.0
-    step_cost: 0.05
-    goal_focus_temp: 1.0
     surround_radius: 2.4
     ideal_radius: 2.0
     radius_tolerance: 0.7

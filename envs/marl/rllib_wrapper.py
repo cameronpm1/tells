@@ -72,7 +72,7 @@ class RLLibWrapper(MultiAgentEnv):
         terminated_all = False
         truncated_all = False
 
-        obs,rew,terminated,truncated,_ = self.env.step(action_dict)
+        obs,rew,terminated,truncated,infos = self.env.step(action_dict)
         rew = dict(rew)
 
         if self.eval:
