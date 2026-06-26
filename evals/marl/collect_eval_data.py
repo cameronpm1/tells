@@ -117,9 +117,10 @@ def data_worker(
     env = make_marl_env(
         cfg,
         seed=cfg['seed'],
-        wrap=True,
+        wrap='rllib',
         eval=True
     )
+    obs_map = env.env.obs_map
 
     if checkpoint_dir is not None:
         checkpoint_dir = os.path.abspath(checkpoint_dir)
@@ -162,17 +163,17 @@ def data_worker(
                 actions[agent_id] = action
             step += 1
 
-            obs_history.append(obs[episode_agent][8:12])
+            obs_history.append(obs[episode_agent][obs_map['team']])
             obs, rewards, terminations, truncations, infos = env.step(actions)
 
             done = {
                 "__all__": terminations["__all__"] or truncations["__all__"]
             }
 
-            #for agent_name in cfg['env']['learned_agent_list']:
-                #ASSUMES TARGET POS DOESNT CHANGE
+
             if cfg['env']['scenario'] == 'predator_prey':
-                target_obs[episode_agent].append(np.concatenate([obs[episode_agent][4:6], obs[episode_agent][6:8]]))
+                rel_goal_pos = obs[episode_agent][obs_map['target_goal']]
+                target_obs[episode_agent].append(obs[episode_agent][obs_map['target_pos']] - rel_goal_pos)
 
             ts_target_obs = []
             for i in range(min_obs):
@@ -183,16 +184,14 @@ def data_worker(
                     ts_target_obs.append(target_obs[episode_agent][-idx])
             ts_target_obs = np.array(ts_target_obs).flatten()
 
-            if step == 1:
-                team_obs = obs_history[-1]
-            else:
-                team_obs = obs_history[-2] + np.random.uniform(-1.0,1.0,size=obs_history[-2].shape)
+            if cfg['env']['scenario'] == 'predator_prey':
+                team_obs = (obs_history[-1] - np.tile(rel_goal_pos,env.n_agents-1)) + np.random.uniform(-1.0,1.0,size=obs_history[-1].shape)
 
             full_obs = {}
             #for agent_name in cfg['env']['learned_agent_list']:
             full_obs[episode_agent] = {}
             full_obs[episode_agent]['target_true'] = np.concatenate((team_obs,ts_target_obs))
-            full_obs[episode_agent]['team_true'] = np.concatenate((obs_history[-1],obs[episode_agent][8:12]))
+            full_obs[episode_agent]['team_true'] = np.concatenate((obs_history[-1],obs[episode_agent][obs_map['team']]-np.tile(rel_goal_pos,env.n_agents-1)))
             save_path = os.path.join(save_dir,'step_'+str(step)+'_'+episode_agent+'.npz')
             np.savez(save_path,**full_obs[episode_agent])
 
