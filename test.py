@@ -2,17 +2,13 @@ import cv2
 import time
 import scipy
 import numpy as np
-import gurobipy as gp
 
-from controllers.boat_mpc import boatMPC
 from util.util import mkdir, load_config
-from tells_environment_dynamics.test import *
 from envs.marl.drones_env import PredatorPreyAviary
-from envs.rl.make_envs import make_usv_game, make_usv_env
 from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
 from envs.marl.make_env import make_drones_env, make_predator_prey_env, make_marl_env
 
-from gym_pybullet_drones.utils.enums import ActionType
+#from gym_pybullet_drones.utils.enums import ActionType
 
 
 def discretize_matrices(state_matrix,control_matrix,mass,inertia):
