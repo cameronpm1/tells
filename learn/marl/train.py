@@ -34,6 +34,7 @@ from ray.rllib.utils.metrics import (
 from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
+from controllers.drone_control import compute_drone_actions
 from controllers.predator_prey_control import compute_slot_actions
 from learn.marl.callbacks import CurriculumCallback, LogRawEpisodeReturn
 
@@ -116,6 +117,16 @@ def _summarize_eval_rows(rows: list[dict]) -> dict[str, float]:
         'avg_steps': float(metrics['steps'].mean()),
     }
 
+def _compute_expert_actions(obs, obs_map: dict, cfg: dict) -> dict[str, int]:
+    if 'drones' in cfg['env']['scenario']:
+        return compute_drone_actions(
+            obs,
+            obs_map,
+            controller_cfg=cfg['env'].get('controller_kwargs'),
+        )
+
+    return compute_slot_actions(obs, obs_map)
+
 def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]:
     policy_id = cfg['policy_list'][0]
     rows = []
@@ -172,7 +183,7 @@ def _collect_slot_controller_dataset(cfg: dict, episodes: int):
         trajectory = []
 
         for _ in range(cfg['env']['max_episode_length']):
-            expert_actions = compute_slot_actions(obs,env.unwrapped.obs_map)
+            expert_actions = _compute_expert_actions(obs, env.unwrapped.obs_map, cfg)
 
             predator_obs = {
                 agent: np.asarray(obs[agent], dtype=np.float32).copy()
@@ -224,7 +235,7 @@ def _maybe_pretrain_policy(algo, cfg: dict, logdir: str) -> bool:
     eval_runs = int(pretrain_cfg.get('eval_runs', 20))
     policy_id = cfg['policy_list'][0]
 
-    print(f'Collecting {episodes} expert episodes from the slot controller...')
+    print(f'Collecting {episodes} expert episodes from the expert controller...')
     obs_arr, act_arr, ret_arr = _collect_slot_controller_dataset(cfg, episodes=episodes)
     action_counts = {
         action: int((act_arr == action).sum())

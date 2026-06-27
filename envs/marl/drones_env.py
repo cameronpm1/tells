@@ -130,11 +130,15 @@ class PredatorPreyAviary(BaseRLAviary):
         self._step = 0
         self.difficulty = 1.0
 
+        target_start = 6
+        target_stop = target_start + (3 * self.num_goal_boxes) + 3
+        team_stop = target_stop + 3 * (len(self.agents) - 1)
+        target_obs_stop = target_stop + 3 * len(self.agents)
         self.obs_map = {
             'self': slice(0, 6),
-            'target': slice(6, 24),
-            'team': slice(24, 24 + 3 * (len(self.agents) - 1)),
-            'target_obs': slice(24, 24 + 3 * (len(self.agents)))
+            'target': slice(target_start, target_stop),
+            'team': slice(target_stop, team_stop),
+            'target_obs': slice(target_stop, target_obs_stop),
         }
         self.goal_rel = True
 
@@ -231,30 +235,20 @@ class PredatorPreyAviary(BaseRLAviary):
             own velocity, 3
             own position, 3
             relative position to each box point, 3 * num_goal_boxes
-            box point velocity for each box, 3 * num_goal_boxes
-            protected flag for each box, num_goal_boxes
-            relative position to the adversary's current target box, 3
-            current target box velocity, 3
-            relative position of every other drone, 3 * num_agents
-
-        Since total drones = num_agents + 1, each protector observes:
-            all other protectors plus the adversary.
+            relative position to the adversary, 3
+            relative position of every other protector, 3 * (num_agents - 1)
         """
         obs_dim = (
-            3
+            6
+            + (3 * self.num_goal_boxes)
             + 3
-            + 3 * self.num_goal_boxes
-            + 3 * self.num_goal_boxes
-            + self.num_goal_boxes
-            + 3
-            + 3
-            + 3 * self.n_agents
+            + 3 * (self.n_agents - 1)
         )
 
         return spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(self.n_agents, obs_dim),
+            shape=(obs_dim,),
             dtype=np.float32,
         )
 
@@ -287,7 +281,29 @@ class PredatorPreyAviary(BaseRLAviary):
         return obs
     
     def _computeInfo(self):
-        return None
+        protected = self._compute_protected_boxes()
+        breached = bool(self._breached_box())
+        oob = bool(self._out_of_bounds())
+        protected_fraction = float(np.mean(protected))
+        success = bool(protected_fraction >= 1.0 and not breached and not oob)
+
+        info = {}
+        for agent in self.agents:
+            info[agent] = {
+                'protected_boxes': int(np.sum(protected)),
+                'protected_fraction': protected_fraction,
+                'breached': breached,
+                'oob': oob,
+                'success': success,
+                'target_box_idx': int(self.current_target_box_idx),
+            }
+        info['target'] = {
+            'target_box_idx': int(self.current_target_box_idx),
+            'breached': breached,
+            'oob': oob,
+        }
+
+        return info
 
     def reset(self, seed=None, options=None):
         self._step = 0
@@ -334,7 +350,6 @@ class PredatorPreyAviary(BaseRLAviary):
         """
         Compute the adversary action from the compact team state and box state.
         """
-        team_state = self._get_team_state()
         replan = self._policy_step_counter % self.controller_cfg['adversary_replan_steps'] == 0
 
         action, target_box_idx = self._compute_adversary_action_from_state(
@@ -381,7 +396,6 @@ class PredatorPreyAviary(BaseRLAviary):
 
         target_pos = box_pos[selected_target_box_idx]
         force = np.zeros(3, dtype=np.float32)
-        print(target_pos,adversary_pos)
         attraction = target_pos - adversary_pos
         force += float(attraction_gain) * attraction
 
@@ -481,7 +495,7 @@ class PredatorPreyAviary(BaseRLAviary):
             if horizontal_dist <= self.intrusion_radius:
                 return True
 
-        return None
+        return False
 
     def _out_of_bounds(self):
         for i in range(self.NUM_DRONES):
@@ -622,4 +636,3 @@ class PredatorPreyAviary(BaseRLAviary):
         rgb = rgba[:, :, :3].astype(np.uint8)
 
         return rgb
-
