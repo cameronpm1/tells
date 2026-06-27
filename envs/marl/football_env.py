@@ -64,31 +64,15 @@ class CirclePass5v1Env(gym.Env):
             agents,
             render=False
         ):
-        print("[CirclePass5v1Env] __init__ start", flush=True)
         super().__init__()
 
         self.agents = agents
         self.n_agents = len(agents)
         self.n_left = 6
         self.n_right = 2
-        self.n_agents = self.n_left + self.n_right
 
-        scenario_name = "academy_circle_pass_5v1"
+        self. env = self._init_scenario(scenario_name='academy_circle_pass_5v1')
 
-        print("[CirclePass5v1Env] registering scenario", flush=True)
-        register_file_as_grf_scenario(scenario_name)
-
-        print("[CirclePass5v1Env] creating GRF environment", flush=True)
-        self.env = football_env.create_environment(
-            env_name=scenario_name,
-            representation="raw",
-            rewards="scoring",
-            render=render,
-            number_of_left_players_agent_controls=self.n_left,
-            number_of_right_players_agent_controls=self.n_right,
-        )
-
-        print("[CirclePass5v1Env] GRF environment created", flush=True)
 
         self.action_space = spaces.MultiDiscrete([19] * self.n_agents)
 
@@ -96,129 +80,126 @@ class CirclePass5v1Env(gym.Env):
             spaces.Dict({}) for _ in range(self.n_agents)
         ])
 
-        self.prev_ball_owned_team = None
-        self.prev_ball_owned_player = None
-        self.prev_left_possession_player = None
-        self.successful_passes = 0
+        self.prev_ball_owned_player = -1
+        self.pass_count = 0
 
-        print("[CirclePass5v1Env] __init__ done", flush=True)
+        self.pass_reward = 1.0
+        self.target_steal_penalty = -10.0
+        self.target_steal_reward = 10.0
+
+        self.obs_map = {
+            {
+            'self': slice(0, 4),
+            'target': slice(4, 7),
+            'team': slice(7, 7 + 2 * (len(self.agents) - 1)),
+            'target_obs': slice(7, 7 + 2 * (len(self.agents))),
+            'self_pos': slice(2, 4),
+            'target_ball': slice(4, 5),
+            'target_pos': slice(5, 7),
+        }
+        }
+
+    def _init_scenario(self, scenario_name):
+        print("[CirclePass5v1Env] registering scenario", flush=True)
+        register_file_as_grf_scenario(scenario_name)
+
+        print("[CirclePass5v1Env] creating GRF environment", flush=True)
+        env = football_env.create_environment(
+            env_name=scenario_name,
+            representation="raw",
+            rewards="scoring",
+            render=render,
+            number_of_left_players_agent_controls=self.n_left,
+            number_of_right_players_agent_controls=self.n_right,
+        )
+        print("[CirclePass5v1Env] GRF environment created", flush=True)
+
+        return env
 
     def reset(self):
-        obs = self.env.reset()
 
-        self.prev_ball_owned_team = None
-        self.prev_ball_owned_player = None
-        self.prev_left_possession_player = None
-        self.successful_passes = 0
+        self.prev_ball_owned_team = -1
+        self.prev_ball_owned_player = -1
+        self.pass_count = 0
+
+        obs = self.env.reset()
 
         return obs
 
     def step(self, actions):
-        if len(actions) != self.n_agents:
-            raise ValueError(f"Expected {self.n_agents} actions, got {len(actions)}")
 
         actions = [int(a) for a in actions]
+        actions = np.concatenate(([0],actions[0:self.n_agents],[0],[actions[-1]]))
 
         actions[0:2] = [0,0] # set goalie actions to 0
         obs, base_reward, done, info = self.env.step(actions)
-        new_obs = {}
-        for agent in self.agents:
-            new_obs[agent] = [] #fill in
 
-        shaped_rewards, drill_done, drill_info = self._compute_drill_rewards(obs)
-
+        obs_no_gk = np.delete(obs,[0,self.n_agents+1])
+        new_obs = self._convert_obs(obs_no_gk)
+        reward = self._compute_team_reward(new_obs)
+        drill_done = False
         done = bool(done or drill_done)
-        info.update(drill_info)
+        info = {}
 
-        return obs, shaped_rewards, done, info
+        reward = [reward for agent in self.agents]
+        done = [done for agent in self.agents]
+        info = [info for agent in self.agents]
 
-    def nearest_left_passer_to_ball(self, state):
-        ball_xy = np.asarray(state["ball"][:2], dtype=np.float32)
-        left_team_all = np.asarray(state["left_team"], dtype=np.float32)
+        return new_obs, shaped_rewards, done, info
 
-        # With non-controllable GK at index 0, passers are indices 1..5.
-        left_passers = left_team_all[1:1 + self.n_left]
+    def _convert_obs(self, obs):
 
-        dists = np.linalg.norm(left_passers - ball_xy, axis=1)
-        local_idx = int(np.argmin(dists))
-        grf_player_idx = local_idx + 1
+        new_obs = {}
 
-        return grf_player_idx, float(dists[local_idx])
+        for i,agent_obs in enumerate(obs):
+            if i < self.n_agents:
+                agent_name = self.agents[i]
+                team = agent_obs['left_team'][1:]
+                pos = team[i]
+                vel = agent_obs['left_team_direction'][i+1]
+                team = np.delete(team,i,axis=0).flatten() - np.tile(pos,self.n_agents-1)
+                if agent_obs['ball_owned_team'] == 0 and agent_obs['ball_owned_player'] == i + 1:
+                    ball = 1
+                else:
+                    ball = 0
 
-    def _compute_drill_rewards(self, obs):
-        """
-        obs is a list of raw observations, one per controlled player.
-        Use obs[0] as the global state reference because raw state includes both teams.
-        """
+                target_pos = agent_obs['right_team'][1] - pos
+            else:
+                agent_name = 'target'
+                team = agent_obs['right_team'][1:]
+                pos = agent_obs['left_team'][1]
+                vel = agent_obs['left_team_direction'][1]
+                team = team.flatten() - np.tile(pos,self.n_agents)
+                if agent_obs['ball_owned_team'] == 0 and agent_obs['ball_owned_player'] == 1:
+                    ball = 1
+                else:
+                    ball = 0
 
-        state = obs[0]
+                target_pos = agent_obs['left_team'][1] - pos
 
-        ball_owned_team = state["ball_owned_team"]      # -1 none, 0 left, 1 right
-        ball_owned_player = state["ball_owned_player"]  # player index within owning team
-        ball = np.array(state["ball"][:2], dtype=np.float32)
+            new_obs[agent_name] = np.concatenate((vel,pos,[ball],target_pos,team))
 
-        left_team = np.array(state["left_team"], dtype=np.float32)
-        right_team = np.array(state["right_team"], dtype=np.float32)
+        return new_obs
 
-        rewards = np.zeros(self.n_agents, dtype=np.float32)
-        done = False
 
-        # Possession shaping.
-        if ball_owned_team == 0:
-            rewards[:self.n_left] += 0.02
-            rewards[self.n_left:] -= 0.02
+    def _compute_team_reward(self, obs):
+        
+        team_ball_state = [obs[agent][self.obs_map['target_ball']] for agent in self.agents]
+        target_has_ball = obs['target'][self.obs_map['target_ball']]
 
-        if ball_owned_team == 1:
-            rewards[:self.n_left] -= 1.0
-            rewards[self.n_left:] += 1.0
-            done = True
+        if target_has_ball:
+            return self.target_steal_penalty
+        else:
+            ball_ownership = np.where(team_ball_state == 1)
+            if len(ball_ownership) > 0:
+                if self.previous_ball_owned_player == -1:
+                    self.previous_ball_owned_player = ball_ownership[0]
+                else:
+                    if self.previous_ball_owned_player != ball_ownership[0]:
+                        self.previous_ball_owned_player = ball_ownership[0]
+                        return self.pass_reward
 
-        # Successful pass detection:
-        # ball remains with left team, but owner changed from one passer to another.
-        successful_pass = (
-            self.prev_ball_owned_team == 0
-            and ball_owned_team == 0
-            and self.prev_ball_owned_player is not None
-            and ball_owned_player != self.prev_ball_owned_player
-            and 0 <= ball_owned_player < self.n_left
-        )
-
-        if successful_pass:
-            self.successful_passes += 1
-            rewards[:self.n_left] += 0.25
-            rewards[self.n_left:] -= 0.10
-
-        # Reward passers for keeping circular spacing.
-        center = np.array([0.0, 0.0], dtype=np.float32)
-        desired_radius = np.array([0.28, 0.18], dtype=np.float32)
-
-        for i in range(self.n_left):
-            normalized = (left_team[i] - center) / desired_radius
-            radius_error = abs(np.linalg.norm(normalized) - 1.0)
-            rewards[i] -= 0.01 * radius_error
-
-        # Reward defender for closing distance to ball.
-        defender_pos = right_team[0]
-        defender_ball_dist = np.linalg.norm(defender_pos - ball)
-        rewards[self.n_left] += 0.01 * (1.0 - defender_ball_dist)
-
-        # Optional curriculum target, episode ends after 10 completed passes.
-        if self.successful_passes >= 10:
-            rewards[:self.n_left] += 1.0
-            rewards[self.n_left:] -= 1.0
-            done = True
-
-        self.prev_ball_owned_team = ball_owned_team
-        self.prev_ball_owned_player = ball_owned_player
-
-        info = {
-            "successful_passes": self.successful_passes,
-            "ball_owned_team": ball_owned_team,
-            "ball_owned_player": ball_owned_player,
-            "stolen_by_defender": ball_owned_team == 1,
-        }
-
-        return rewards, done, info
+        return 0.0
 
     def render_rgb(self):
         """
@@ -263,7 +244,7 @@ def build_scenario(builder):
     center_x = 0.0
     center_y = 0.0
     rx = 0.28
-    ry = 0.18
+    ry = 0.28
     n_passers = 5
 
     passer_positions = []
