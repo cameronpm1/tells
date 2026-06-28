@@ -112,6 +112,9 @@ def adversary_controller(
     obs_map: dict,
     controller_cfg: dict
 ):
+    '''
+    assumes recieves obs['target'] from full state obs
+    '''
 
     force = np.zeros(2)
 

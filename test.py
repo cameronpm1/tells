@@ -66,33 +66,38 @@ def drone_test():
     env.close()
 
 def football_test():
-    agents = ['agent0','agent1','agent2','agent3','agent4']
-    env = CirclePass5v1Env(agents=agents, render=True)
+    config_path = '/home/cameron/tells/confs/football/5a_game.yaml'
+    cfg = load_config(config_path)
+
+    env = make_marl_env(config=cfg,wrap='rllib')
 
     obs = env.reset()
-    images = []
+    images1 = []
+    images2 = []
 
-    max_episode_length = 300
+    max_episode_length = 900
 
     for step in range(max_episode_length):
-        # GRF action format for this wrapper:
-        # one discrete integer action per controlled agent.
-        #
-        # With 5 passers and 1 defender:
-        # actions = [left_0, left_1, left_2, left_3, left_4, right_0]
-        #
-        # Action 0 is idle/no-op.
-        actions = env.action_space.sample()
+        actions = np.random.randint(0, 10, size=5)
+        obs, reward, term, trunc, info = env.step(actions)
 
-        obs, reward, done, info = env.step(actions)
-
-        time.sleep(0.1)
-
-        if done:
+        if term['__all__'] or trunc['__all__']:
             break
 
-        images.append(env.render_rgb())
-
+        frame1 = env.env.render_rgb()
+        #frame2 = env.env.render_rgb_old()
+        images1.append(frame1)
+        #images2.append(frame2)
+    obs = env.reset()
+    for step in range(max_episode_length):
+        actions = np.random.randint(0, 10, size=5)
+        obs, reward, term, trunc, info = env.step(actions)
+        if term['__all__'] or trunc['__all__']:
+            break
+        frame1 = env.env.render_rgb()
+        images1.append(frame1)
+    
+        '''
         print(
             f"step={step + 1}, "
             f"reward={np.asarray(reward)}, "
@@ -102,11 +107,15 @@ def football_test():
             f"done={done}",
             flush=True,
         )
+        '''
 
-    save_file = "test_vid.gif"
-    print("generating video in " + save_file)
+    save_file = "test_vid1.gif"
+    print("generating video in " + save_file)   
+    save_rgb_gif(images1, save_file)
 
-    save_rgb_gif(images, save_file)
+    #save_file = "test_vid2.gif"
+    #print("generating video in " + save_file)   
+    #save_rgb_gif(images2, save_file)
 
     env.close()
 
