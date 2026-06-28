@@ -276,4 +276,10 @@ def compute_drone_actions(
     return int(actions[0])
 
 
+def drone_controller(obs, obs_map: dict, controller_cfg: dict):
+    """Predator-prey style entry point: obs, obs_map, controller constants."""
+    return compute_drone_actions(obs, obs_map, controller_cfg)
+
+
+controller = drone_controller
 compute_drone_slot_actions = compute_drone_actions

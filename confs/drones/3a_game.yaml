@@ -46,6 +46,11 @@ env:
     adversary_attraction_gain: 1.0
     adversary_replan_steps: 10
     protection_radius: *protection_radius
+    target_response: 1.0
+    follow_threshold: 0.35
+    max_gap_factor: 1.05
+    deadzone: 0.35
+    altitude_deadzone: 0.15
 
 sim:
   n: 3 #number of pursuit agents

@@ -34,7 +34,7 @@ from ray.rllib.utils.metrics import (
 from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
-from controllers.drone_control import compute_drone_actions
+from controllers.drone_control import drone_controller
 from controllers.predator_prey_control import compute_slot_actions
 from learn.marl.callbacks import CurriculumCallback, LogRawEpisodeReturn
 
@@ -119,10 +119,10 @@ def _summarize_eval_rows(rows: list[dict]) -> dict[str, float]:
 
 def _compute_expert_actions(obs, obs_map: dict, cfg: dict) -> dict[str, int]:
     if 'drones' in cfg['env']['scenario']:
-        return compute_drone_actions(
+        return drone_controller(
             obs,
             obs_map,
-            controller_cfg=cfg['env'].get('controller_kwargs'),
+            cfg['env'].get('controller_kwargs', {}),
         )
 
     return compute_slot_actions(obs, obs_map)
