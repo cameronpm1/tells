@@ -38,10 +38,10 @@ env:
     protection_radius: &protection_radius 1.1
     intrusion_radius: 0.5
     base_altitude: 0.5
-    base_speed: 6.0
-    speed_ratio: 0.6
+    base_speed: 3.0
+    speed_ratio: 0.55
   controller_kwargs:
-    adversary_repulsion_radius: 0.75
+    adversary_repulsion_radius: 1.1
     adversary_repulsion_gain: 1.0
     adversary_attraction_gain: 1.0
     adversary_replan_steps: 10
@@ -49,8 +49,10 @@ env:
     target_response: 1.0
     follow_threshold: 0.35
     max_gap_factor: 1.05
-    deadzone: 0.35
+    deadzone: 0.2
     altitude_deadzone: 0.15
+    min_altitude: 0.25
+    max_altitude: 1.5
 
 sim:
   n: 3 #number of pursuit agents

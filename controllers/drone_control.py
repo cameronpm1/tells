@@ -221,9 +221,17 @@ def _compute_actions_from_state(
 
     deadzone = float(controller_cfg.get("deadzone", 0.35))
     altitude_deadzone = float(controller_cfg.get("altitude_deadzone", 0.15))
+    min_altitude = float(controller_cfg.get("min_altitude", 0.25))
+    max_altitude = float(controller_cfg.get("max_altitude", 1.5))
     for role_idx, protector_idx in enumerate(role_order):
         move_vec = slots[role_idx] - protector_positions[protector_idx]
-        actions[protector_idx] = vec_to_action(move_vec, deadzone, altitude_deadzone)
+        altitude = float(protector_positions[protector_idx, 2])
+        if altitude < min_altitude:
+            actions[protector_idx] = 9
+        elif altitude > max_altitude:
+            actions[protector_idx] = 10
+        else:
+            actions[protector_idx] = vec_to_action(move_vec, deadzone, altitude_deadzone)
 
     return actions
 
