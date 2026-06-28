@@ -233,6 +233,8 @@ class PredatorPreyEnv(gymnasium.Env):
 
         predator_target_vecs = predator_positions - target_pos
         predator_target_dists = np.linalg.norm(predator_target_vecs, axis=1)
+        touch_radius = 2.0 * predators[0].size
+        touch_penalty = float(np.mean(np.clip(touch_radius - predator_target_dists, 0.0, None)))
 
         radius_error = np.abs(predator_target_dists - self.reward_cfg['ideal_radius'])
         ring_score = float(
@@ -289,6 +291,7 @@ class PredatorPreyEnv(gymnasium.Env):
             'ring_score': ring_score,
             'close_fraction': close_fraction,
             'coverage_score': coverage_score,
+            'touch_penalty': touch_penalty,
             'hold': hold,
             'hold_fraction': self.hold_steps,
             'success': success,
@@ -330,6 +333,7 @@ class PredatorPreyEnv(gymnasium.Env):
             - (self.reward_cfg['distance_scale'] * metrics['target_goal_dist'])
             + (self.reward_cfg['slot_scale'] * metrics['controller_action_reward'])
             + (self.reward_cfg['coverage_scale'] * metrics['coverage_score'])
+            - (self.reward_cfg['touch_penalty_scale'] * metrics['touch_penalty'])
             - self.reward_cfg['step_cost']
             #+ (self.reward_cfg['ring_scale'] * metrics['ring_score'])
         )

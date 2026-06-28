@@ -8,7 +8,7 @@ from envs.marl.drones_env import PredatorPreyAviary
 from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
 from envs.marl.make_env import make_drones_env, make_predator_prey_env, make_marl_env
 
-from gym_pybullet_drones.utils.enums import ActionType
+#from gym_pybullet_drones.utils.enums import ActionType
 
 import gfootball.env as football_env
 

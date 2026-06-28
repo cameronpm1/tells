@@ -2,7 +2,7 @@ seed: &seed 23 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
 min_obs: 10
-logdir: logs/marl/half_old2_smaller_dist
+logdir: logs/marl/ppo_bc_new10
 notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 alg:
@@ -10,15 +10,15 @@ alg:
   lr : 0.00003
   gamma: 0.99
   nenvs : 2
-  cpu_envs: 6
+  cpu_envs: 2
   target_ent: 0.1
   batch: 4096
   batch_size: 256
   num_gpus: 0
   pi : [256, 256, 256]
   vf : [256, 256, 256]
-  timesteps: 5000
-  checkpoint_freq: 100
+  timesteps: 3000
+  checkpoint_freq: 250
   minibatch_size: 512
   num_epochs: 3
   lambda: 0.95
@@ -43,6 +43,7 @@ env:
   agent_list: ['target', 'agent0', 'agent1', 'agent2']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
   belief: true
+  render_mode: rgb_array
   scenario_kwargs:
     base_speed: 1.2
     speed_ratio: 0.35
@@ -74,12 +75,12 @@ env:
     hold_ring_min: 0.05
     success_hold_steps: 8
     success_bonus: 750.0
-    progress_scale: 16
-    step_cost: 0.05
-    coverage_scale: 2.0
-    slot_scale: 0.1 #18.0
-    distance_scale: 0.1
+    step_cost: 0.25
+    coverage_scale: 5.0
+    slot_scale: 0.5
+    distance_scale: 0.0
     hold_scale: 20.0
+    touch_penalty_scale: 70.0
 
 sim:
   n: 3 #number of pursuit agents
