@@ -1,0 +1,516 @@
+
+import sys
+import gym
+import math
+import numpy as np
+from gym import spaces
+from pathlib import Path
+from copy import deepcopy
+from PIL import Image, ImageDraw
+
+from controllers.football_control import compute_rondo_actions
+
+THIS_FILE = Path(__file__).resolve()
+SCENARIO_DIR = THIS_FILE.parent
+PROJECT_ROOT = THIS_FILE.parents[2]
+FOOTBALL_REPO = PROJECT_ROOT / "external" / "football"
+
+if str(FOOTBALL_REPO) not in sys.path:
+    sys.path.insert(0, str(FOOTBALL_REPO))
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from gfootball.scenarios import *
+import gfootball.env as football_env
+
+PROJECT_ROOT = Path(__file__).resolve()
+FOOTBALL_REPO = PROJECT_ROOT / "external" / "football"
+
+sys.path.insert(0, str(FOOTBALL_REPO))
+
+'''
+compute team initial positions
+'''
+
+rx = 0.28
+ry = 0.18
+n_passers = 5
+
+AGENT_ANCHORS = []
+for i in range(5):
+    theta = 2.0 * math.pi * i / n_passers
+    x = rx * math.cos(theta)
+    y = ry * math.sin(theta)
+    AGENT_ANCHORS.append((x, y))
+
+AR = 2.38
+
+
+def register_file_as_grf_scenario(scenario_name: str):
+    """
+    Registers this current Python module as:
+        gfootball.scenarios.<scenario_name>
+
+    This allows GRF to find build_scenario() even though the scenario is
+    defined in the same file as the environment wrapper.
+    """
+
+    module_name = f"gfootball.scenarios.{scenario_name}"
+    current_module = sys.modules[__name__]
+
+    if not hasattr(current_module, "build_scenario"):
+        raise RuntimeError(
+            f"{__name__} does not define build_scenario(). "
+            "Make sure build_scenario() is defined before creating the env."
+        )
+
+    sys.modules[module_name] = current_module
+
+class CirclePass5v1Env(gym.Env):
+    """
+    Multi-agent 5v1 rondo-style drill.
+
+    Agents:
+        left_0 ... left_4: passing team
+        right_0: middle defender
+
+    Objective:
+        left team keeps possession and passes around the circle.
+        right defender tries to steal the ball.
+    """
+
+    def __init__(
+            self, 
+            agent_list: list[str],
+            full_agent_list: list[str],
+            adversary_controller,
+            max_episode_length: int,
+            reward_kwargs: dict,
+            controller_kwargs: dict,
+            render=False
+        ):
+        super().__init__()
+
+        self.agents = agent_list
+        self.n_agents = len(self.agents)
+        self.adversary_controller = adversary_controller
+        self.max_episode_length = max_episode_length
+        self.reward_kwargs = reward_kwargs
+        self.controller_kwargs = controller_kwargs
+        self.full_agent_list = full_agent_list
+        self._step = 0
+
+        self.env = self._init_scenario(
+            scenario_name='academy_circle_pass_5v1', 
+            render=render
+        )
+
+        self.prev_ball_owned_player = -1
+        self.pass_count = 0
+
+        self.action_library = {
+            0: 14,  # stay / release_direction
+            1: 1,   # move left
+            2: 2,   # move top_left
+            3: 3,   # move top
+            4: 4,   # move top_right
+            5: 5,   # move right
+            6: 6,   # move bottom_right
+            7: 7,   # move bottom
+            8: 8,   # move bottom_left
+            9: 11,   # long_pass
+        }
+
+        self.obs_map = {
+            'self': slice(0, 4),
+            'target': slice(4, 11),
+            'team': slice(11, 11 + 2 * (len(self.agents) - 1) + 1),
+            'target_obs': slice(9, 9 + 2 * (len(self.agents)) + 1),
+            'self_pos': slice(2, 4),
+            'self_vel': slice(0, 2),
+            'target_ball': slice(4, 7),
+            'target_pos': slice(7, 9),
+            'target_vel': slice(9, 11),
+            'state_space':(18,),
+        }
+
+    def _init_scenario(self, scenario_name, render):
+        print("[CirclePass5v1Env] registering scenario", flush=True)
+        register_file_as_grf_scenario(scenario_name)
+
+        print("[CirclePass5v1Env] creating GRF environment", flush=True)
+        env = football_env.create_environment(
+            env_name=scenario_name,
+            representation="raw",
+            rewards="scoring",
+            render=render,
+            number_of_left_players_agent_controls=self.n_agents+1,
+            number_of_right_players_agent_controls=2,
+        )
+        print("[CirclePass5v1Env] GRF environment created", flush=True)
+
+        return env
+
+    def _observation_space(self, agent):
+        return spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(self.obs_map['state_space']),
+            dtype=np.float32,
+        )
+
+    def _action_space(self, agent):
+        return spaces.Discrete(len(self.action_library))
+
+    def reset(self):
+
+        self._step = 0
+        self.prev_ball_owned_team = -1
+        self.prev_ball_owned_player = -1
+        self.pass_count = 0
+
+        obs = self.env.reset()
+
+        self.raw_obs = obs
+        obs_no_gk = np.delete(obs,[0,self.n_agents+1])
+        new_obs = self._convert_obs(obs_no_gk, first=True)
+        self.obs = new_obs
+
+        return deepcopy(self.obs), {}
+
+    def step(
+        self, 
+        actions_dict: dict
+    ):
+
+        self._step += 1
+
+        actions_dict = compute_rondo_actions(self.obs,self.obs_map)
+
+        actions = []
+        for agent in self.agents:
+            actions.append(actions_dict[agent])
+
+        adversary_action = self.adversary_controller(self.obs['target'],self.obs_map,self.controller_kwargs)
+        actions = np.concatenate(([0],actions,[0,adversary_action]))
+        actions = [self.action_library[a] for a in actions]
+
+        obs, base_reward, done, info = self.env.step(actions)
+
+        self.raw_obs = obs
+        obs_no_gk = np.delete(obs,[0,self.n_agents+1])
+        new_obs = self._convert_obs(obs_no_gk)
+        self.obs = new_obs
+        reward = self._compute_team_reward(self.obs)
+        truncation = self._compute_truncation()
+        termination = self._compute_termination()
+        info = {}
+
+        reward = {agent : reward for agent in self.agents}
+        reward['target'] = 0.0
+        truncations = {agent : truncation for agent in self.full_agent_list}
+        terminations = {agent : termination or done for agent in self.full_agent_list}
+        info = {agent : info for agent in self.agents}
+
+        terminations["__all__"] = all(terminations.values())
+        truncations["__all__"] = all(truncations.values())
+
+        return deepcopy(self.obs), reward, terminations, truncations, info
+
+    def _convert_obs(self, obs, first=False):
+
+        new_obs = {}
+        ball_owner = self.prev_ball_owned_player
+        for i,agent_obs in enumerate(obs):
+            if i < self.n_agents:
+                agent_name = self.agents[i]
+                team = agent_obs['left_team'][1:]
+                pos = team[i]
+                if first:
+                    vel = np.zeros((2,))
+                else:
+                    vel =  pos - self.obs[agent_name][self.obs_map['self_pos']]
+                team = np.delete(team,i,axis=0).flatten() - np.tile(pos,self.n_agents-1)
+
+                if agent_obs['ball_owned_team'] == 0 and agent_obs['ball_owned_player'] == i + 1:
+                    ball_owned = [1]
+                    ball_owner = i
+                elif np.linalg.norm(agent_obs['ball'][0:2] - pos) < 0.03:
+                    ball_owned = [1]
+                    ball_owner = i
+                else:
+                    ball_owned = [0]
+                ball = np.concatenate((deepcopy(AGENT_ANCHORS[i]),ball_owned))
+
+                target_pos = agent_obs['right_team'][1] - pos
+                target_pos = np.concatenate((target_pos,agent_obs['right_team_direction'][1]))
+            else:
+                agent_name = 'target'
+                team = agent_obs['right_team'][1:]
+                pos = agent_obs['left_team'][1]
+                if first:
+                    vel = np.zeros((2,))
+                else:
+                    vel =  pos - self.obs[agent_name][self.obs_map['self_pos']]
+                team = team.flatten() - np.tile(pos,self.n_agents)
+                if agent_obs['ball_owned_team'] == 0 and agent_obs['ball_owned_player'] == 1:
+                    ball_owned = [1]
+                else:
+                    ball_owned = [0]
+                ball_pos = agent_obs['ball'][0:2] - pos
+                ball = np.concatenate((ball_pos,ball_owned))
+
+                target_pos = agent_obs['left_team'][1] - pos
+
+            new_obs[agent_name] = np.concatenate((vel,pos,ball,target_pos,team))
+
+        for agent_name in self.agents:
+            new_obs[agent_name] = np.concatenate((new_obs[agent_name],[ball_owner]))
+
+
+        return new_obs
+
+
+    def _compute_team_reward(self, obs):
+
+        reward = 0
+        
+        team_ball_state = np.array([obs[agent][self.obs_map['target_ball']][-1] for agent in self.agents])
+        target_has_ball = obs['target'][self.obs_map['target_ball']][-1]
+        if target_has_ball:
+            return self.reward_kwargs['target_steal_penalty']
+        else:
+            ball_ownership = np.where(team_ball_state == 1)[0]
+            if len(ball_ownership) > 0:
+                if self.prev_ball_owned_player == -1:
+                    self.prev_ball_owned_player = ball_ownership[0]
+                else:
+                    if self.prev_ball_owned_player != ball_ownership[0]:
+                        if (self.prev_ball_owned_player - ball_ownership[0]) % 5 in (1, 5 - 1):
+                            reward += self.reward_kwargs['pass_reward']
+                        else:
+                            #double reward for non-neighbor passes
+                            reward += 2*self.reward_kwargs['pass_reward']
+                        self.prev_ball_owned_player = ball_ownership[0]
+                        return reward 
+
+        dev = np.linalg.norm(self.raw_obs[0]['left_team'][1:] - AGENT_ANCHORS, axis=1)
+        dev_threshold = [1 if d > self.reward_kwargs['deviation_threshold'] else 0 for d in dev]
+        reward -= sum(dev_threshold) * self.reward_kwargs['deviation_scale']
+
+        return reward
+
+    def _compute_truncation(self):
+
+        if self._step >= self.max_episode_length:
+            return True
+        else:
+            return False
+
+    def _compute_termination(self):
+
+        if self.obs['target'][self.obs_map['target_ball']][-1] == 1:
+            return True
+
+    def render_rgb_old(self):
+        """
+        Returns the current GRF frame as an RGB uint8 image.
+
+        Output:
+            np.ndarray with shape (H, W, 3), dtype=np.uint8
+        """
+
+        frame = self.env.render(mode="rgb_array")
+        frame = np.asarray(frame)
+
+        # Drop alpha channel if present.
+        if frame.shape[-1] == 4:
+            frame = frame[:, :, :3]
+
+        return frame.astype(np.uint8)
+
+    def render_rgb(self, width=1280, height=720, obs_index=0):
+
+        obs_i = self.raw_obs[obs_index]
+
+        left_team = np.asarray(obs_i["left_team"], dtype=np.float32)
+        right_team = np.asarray(obs_i["right_team"], dtype=np.float32)
+
+        left_dir = np.asarray(obs_i["left_team_direction"], dtype=np.float32)
+        right_dir = np.asarray(obs_i["right_team_direction"], dtype=np.float32)
+
+        left_roles = np.asarray(obs_i["left_team_roles"])
+        right_roles = np.asarray(obs_i["right_team_roles"])
+
+        ball = np.asarray(obs_i["ball"][:2], dtype=np.float32)
+
+        x_min, x_max = -1.05, 1.05
+        y_min, y_max = -0.45, 0.45
+        margin = 40
+
+        img = Image.new("RGB", (width, height), (35, 120, 45))
+        draw = ImageDraw.Draw(img)
+
+        def to_px(p):
+            x, y = float(p[0]), float(p[1])
+
+            px = margin + (x - x_min) / (x_max - x_min) * (width - 2 * margin)
+            py = margin + (y - y_min) / (y_max - y_min) * (height - 2 * margin)
+
+            return int(px), int(py)
+
+        def in_play(p):
+            return x_min <= p[0] <= x_max and y_min <= p[1] <= y_max
+
+        def draw_heading_arrow(p, v, color=(255, 255, 255)):
+            if not in_play(p):
+                return
+
+            speed = np.linalg.norm(v)
+
+            # If nearly stationary, do not draw a noisy arrow.
+            if speed < 1e-5:
+                return
+
+            px, py = to_px(p)
+
+            # Convert velocity direction to pixel direction.
+            v_unit = v / speed
+
+            arrow_len = 35
+            dx = float(v_unit[0]) * arrow_len
+            dy = float(v_unit[1]) * arrow_len
+
+            x2 = px + dx
+            y2 = py + dy
+
+            draw.line(
+                [(px, py), (x2, y2)],
+                fill=color,
+                width=4,
+            )
+
+            # Arrowhead.
+            angle = math.atan2(dy, dx)
+            head_len = 10
+            head_angle = math.pi / 6
+
+            x3 = x2 - head_len * math.cos(angle - head_angle)
+            y3 = y2 - head_len * math.sin(angle - head_angle)
+
+            x4 = x2 - head_len * math.cos(angle + head_angle)
+            y4 = y2 - head_len * math.sin(angle + head_angle)
+
+            draw.polygon(
+                [(x2, y2), (x3, y3), (x4, y4)],
+                fill=color,
+            )
+
+        def draw_player(p, v, color, label=None):
+            if not in_play(p):
+                return
+
+            px, py = to_px(p)
+            r = 12
+
+            draw.ellipse(
+                [px - r, py - r, px + r, py + r],
+                fill=color,
+                outline=(0, 0, 0),
+                width=2,
+            )
+
+            draw_heading_arrow(p, v, color=(255, 255, 255))
+
+            if label is not None:
+                draw.text((px + 14, py - 10), str(label), fill=(255, 255, 255))
+
+        # Field boundary.
+        draw.rectangle(
+            [margin, margin, width - margin, height - margin],
+            outline=(255, 255, 255),
+            width=3,
+        )
+
+        # Center line and circle.
+        cx, cy = to_px([0.0, 0.0])
+        draw.line(
+            [(cx, margin), (cx, height - margin)],
+            fill=(255, 255, 255),
+            width=2,
+        )
+        draw.ellipse(
+            [cx - 70, cy - 70, cx + 70, cy + 70],
+            outline=(255, 255, 255),
+            width=2,
+        )
+
+        # Left team, skipping GK.
+        for idx, p in enumerate(left_team):
+            if left_roles[idx] == 0:
+                continue
+
+            draw_player(
+                p,
+                left_dir[idx],
+                color=(40, 90, 255),
+                label=f"L{idx}",
+            )
+
+        # Right team, skipping GK.
+        for idx, p in enumerate(right_team):
+            if right_roles[idx] == 0:
+                continue
+
+            draw_player(
+                p,
+                right_dir[idx],
+                color=(255, 60, 60),
+                label=f"R{idx}",
+            )
+
+        # Ball.
+        if in_play(ball):
+            bx, by = to_px(ball)
+            r = 7
+
+            draw.ellipse(
+                [bx - r, by - r, bx + r, by + r],
+                fill=(255, 255, 255),
+                outline=(0, 0, 0),
+                width=2,
+            )
+
+        return np.asarray(img, dtype=np.uint8)
+
+    def render(self, mode="human"):
+        return self.env.render(mode=mode)
+
+    def close(self):
+        self.env.close()
+
+def build_scenario(builder):
+    builder.config().game_duration = 1500
+    builder.config().deterministic = False
+    builder.config().offsides = False
+    builder.config().end_episode_on_out_of_play = True
+    builder.config().end_episode_on_possession_change = False
+    builder.config().end_episode_on_score = True
+
+    ball_offset_x = np.random.random()*0.1 + 0.97
+    ball_offset_y = np.random.random()*0.1 + 0.97
+    start_agent = np.random.choice([0,1,2,3,4])
+
+    builder.SetBallPosition(AGENT_ANCHORS[start_agent][0]*ball_offset_x, AGENT_ANCHORS[start_agent][1]*ball_offset_y)
+
+    builder.SetTeam(Team.e_Left)
+    builder.AddPlayer(-2.0, 0.0, e_PlayerRole_GK, lazy=True, controllable=True)
+    for x, y in AGENT_ANCHORS:
+        x_offset = ((np.random.random() * 2) -1) * 0.07
+        y_offset = ((np.random.random() * 2) -1) * 0.05
+        builder.AddPlayer(x + x_offset, y + y_offset, e_PlayerRole_CM, lazy=False, controllable=True)
+
+    builder.SetTeam(Team.e_Right)
+    builder.AddPlayer(2.0, 0.0, e_PlayerRole_GK, lazy=True, controllable=True)
+    builder.AddPlayer(0.0, 0.0, e_PlayerRole_CM, lazy=False, controllable=True)

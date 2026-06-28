@@ -10,12 +10,66 @@ This repository provides a training environment for collaborative multi-agent be
 
 
 The default sync installs the predator-prey/MARL stack. The pybullet drone
-environment is optional; install it only when needed:
+environment is required for the caravan env. We recommend using a conda environment as it is necessary for google-football. Google-football has not been updated in several years, and requires an outdated version of setup-tools, as a result installation can be tricky depending on your machine. Set up instructions acter cloning git-repository below:
 
 ```bash
 git submodule update --init --recursive
 
-pip install -e external/pybullet-drones
+conda env create -f environment.yml
+
+python -m pip install "pip<23" "setuptools==65.5.0" "wheel<0.40"
+
+python -m pip install -r requirements.txt
+```
+
+Check if google-football is if not download it from git manually:
+
+```bash
+cd external
+
+git clone git@github.com:google-research/football.git
+
+cd football
+
+pip install -r requirements
+
+python -m pip install .
+```
+
+If google-football hits an error in install that says "likely not an error with pip," it could me an issue with you environment pointing to newer versions of boost and setup tools outside of your conda environment. In order to fix this, run the following command, you can copy and paste the entire prompt into your linux terminal. The rerun "python -m pip install .".
+
+```bash
+cp gfootball/build_game_engine.sh gfootball/build_game_engine.sh.bak
+
+python - <<'PY'
+from pathlib import Path
+
+p = Path("gfootball/build_game_engine.sh")
+s = p.read_text()
+
+old = "cmake ."
+new = (
+    "cmake . "
+    "-DPython_EXECUTABLE=$CONDA_PREFIX/bin/python "
+    "-DPython_ROOT_DIR=$CONDA_PREFIX "
+    "-DPython_FIND_STRATEGY=LOCATION "
+    "-DPython_FIND_VIRTUALENV=FIRST "
+    "-DBOOST_ROOT=$CONDA_PREFIX "
+    "-DBoost_NO_SYSTEM_PATHS=ON "
+    "-DCMAKE_PREFIX_PATH=$CONDA_PREFIX "
+    "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+)
+
+if old not in s:
+    raise SystemExit("Could not find plain 'cmake .' in build_game_engine.sh")
+
+p.write_text(s.replace(old, new))
+print("patched")
+PY
+
+rm -rf build
+rm -rf third_party/gfootball_engine/CMakeFiles
+rm -f third_party/gfootball_engine/CMakeCache.txt
 ```
 
 ---

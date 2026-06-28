@@ -1,0 +1,43 @@
+seed: &seed 22 # set experiment seed
+timestep: &timestep 1.0  #20
+horizon: &horizon 10 #10
+logdir: /home/cameron/tells/logs/marl/drones1
+notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
+
+alg:
+  type : sac
+  lr : 0.0001 
+  gamma: 0.99
+  nenvs : 2
+  cpu_envs: 5
+  target_ent: 0.1
+  batch: 256
+  batch_size: 256
+  buffer_size: 1000000
+  learning_starts: 100000
+  pi : [512, 512] # #[512,512,512] #[256, 256] #
+  vf : [512, 512] # #[512,512,512] #[256, 256] #
+  cl:
+    ts_start: 500000
+    ts_end: 2500000
+    val_start: 0.0
+    val_end: 1.0
+  timesteps : 100000
+
+env:
+  scenario: 5_agent_football
+  max_episode_length: 300 #MUST ALSO EDIT IN BUILDER AT BOTTOM OF ENV FILE
+  agent_list: ['agent0', 'agent1', 'agent2', 'agent3', 'agent4', 'target']
+  learned_agent_list: ['agent0', 'agent1', 'agent2', 'agent3', 'agent4']
+  reward_kwargs:
+    pass_reward: 1.0
+    target_steal_penalty: -10.0
+    deviation_threshold: 0.1
+    deviation_scale: 0.5
+  controller_kwargs:
+    dead_zone: 0.01
+
+sim:
+  n: 3 #number of pursuit agents
+
+policy_list: ['agent0'] #, 'agent1', 'agent2']

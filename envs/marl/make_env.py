@@ -1,20 +1,19 @@
 import yaml
 import numpy
-from typing import Optional
+from typing import Optional, Union
 
 from envs.marl.pf_wrapper import PFWrapper
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.drones_env import PredatorPreyAviary
 from envs.marl.particle_filter import PredatorPreyParticleFilter
 from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
-from controllers.predator_prey_control import adversary_controller, compute_slot_actions, action_to_vec
 
 def make_marl_env(
         config: dict,
         seed: Optional[int] = None,
         wrap: Optional[str] = 'rllib',
         eval: bool = False,
-        render_mode: Optional[str] = None,
+        render_mode: Optional[Union[str,bool]] = None,
         belief_kwargs: Optional[dict] = None,
 ):
     '''
@@ -37,6 +36,9 @@ def make_marl_env(
     
     elif 'drones' in env_name:
         return make_drones_env(config,seed,wrap,eval,render_mode,belief_kwargs)
+
+    elif 'footbal' in env_name:
+        return make_football_env(config,seed,wrap,eval,render_mode,belief_kwargs)
     
     else:
         raise NotImplementedError(f'Env {env_name} not implemented yet')
@@ -61,6 +63,8 @@ def make_predator_prey_env(
     wrap:bool
         if True wraps env in rllib wrapper
     '''
+
+    from controllers.predator_prey_control import adversary_controller, compute_slot_actions, action_to_vec
 
     scenario_kwargs = config['env']['scenario_kwargs']
     scenario_kwargs['agent_list'] = config['env']['agent_list']
@@ -92,6 +96,8 @@ def make_predator_prey_env(
             eval=eval,
             belief_kwargs=config['env']['belief_kwargs'],
         )
+    else:
+        print('Wrapper not supported for football env...')
     
     return env
 
@@ -130,5 +136,47 @@ def make_drones_env(
 
     if wrap == 'rllib':
         env = RLLibWrapper(env,'drones',eval,belief_kwargs)
+    else:
+        print('Wrapper not supported for football env...')
     
+    return env
+
+def make_football_env(
+        config: dict,
+        seed: Optional[int] = None,
+        wrap: Optional[str] = 'rllib',
+        eval: bool = False,
+        render_mode: Optional[bool] = False,
+        belief_kwargs: Optional[dict] = None,
+):
+    '''
+    initialize drones_env using pybullet-drones
+
+    input
+    -----
+    config_dir:dict
+        config dictionary
+    seed:int
+        seed
+    wrap:bool
+        if True wraps env in rllib wrapper
+    '''
+    from envs.marl.football_env import CirclePass5v1Env
+    from controllers.football_control import adversary_controller
+
+    env = CirclePass5v1Env(
+        agent_list=config['env']['learned_agent_list'],
+        full_agent_list=config['env']['agent_list'],
+        adversary_controller=adversary_controller,
+        max_episode_length=config['env']['max_episode_length'],
+        controller_kwargs=config['env'].get('controller_kwargs'),
+        reward_kwargs = config['env'].get('reward_kwargs'),
+        render=False,
+    )
+
+    if wrap == 'rllib':
+        env = RLLibWrapper(env,'drones',eval,belief_kwargs)
+    else:
+        print('Wrapper not supported for football env...')
+
     return env
