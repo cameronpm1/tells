@@ -40,6 +40,7 @@ env:
     base_altitude: 0.5
     base_speed: 3.0
     speed_ratio: 0.55
+    target_spawn_distance: 5.0
   controller_kwargs:
     adversary_repulsion_radius: 1.1
     adversary_repulsion_gain: 1.0

@@ -50,6 +50,7 @@ class PredatorPreyAviary(BaseRLAviary):
         base_speed: float = 8.0,
         speed_ratio: float = 0.4,
         protection_radius: float = 1.1,
+        target_spawn_distance: float = 5.0,
         controller_kwargs: dict = None,
         drone_model: DroneModel = DroneModel.CF2X,
         neighbourhood_radius: float = np.inf,
@@ -71,6 +72,7 @@ class PredatorPreyAviary(BaseRLAviary):
         self.base_altitude = base_altitude
         self.base_speed = base_speed
         self.speed_ratio = speed_ratio
+        self.target_spawn_distance = float(target_spawn_distance)
         self.max_episode_length = max_episode_length
 
         self.num_goal_boxes = int(num_goal_boxes)
@@ -529,7 +531,7 @@ class PredatorPreyAviary(BaseRLAviary):
         max_goal_y = float(np.max(self.box_state[:, 1]))
         target_x = rng.uniform(min_goal_x, max_goal_x)
         target_y_sign = -1.0 if rng.random() < 0.5 else 1.0
-        target_y = rng.uniform(min_goal_x, max_goal_x) + target_y_sign * 5
+        target_y = rng.uniform(min_goal_y, max_goal_y) + target_y_sign * self.target_spawn_distance
 
         xyzs[self.target_idx] = np.array(
             [target_x, target_y, self.base_altitude*2],
