@@ -3,17 +3,17 @@ seed: 2
 if_cuda: True
 gamma: 0.5
 log_dir: 'logs/belief/'
-label: 'ppo_bc_test6'
+label: 'predator_prey_test1'
 train_batch: 256
 val_batch: 256
 test_batch: 256
 num_workers: 15
 num_gpus: 1
-model_name: 'NN'
+model_name: 'predator_prey_NN'
 input_channels: 44
 output_channels: 8
 data_dir: 'data/'
-data_name: 'ppo_bc_noisierinject'
+data_name: 'predator_prey_bc'
 lr_schedule: []
 epochs: 1000
 

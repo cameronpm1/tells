@@ -2,15 +2,8 @@ import numpy as np
 
 from util.util import furthest_point
 
-def vec_to_action(vec: np.ndarray, deadzone: float = 0.05) -> int:
-
-    vec = np.asarray(vec, dtype=np.float32)
-
-    if np.linalg.norm(vec) < deadzone:
-        return 0  # stay still / release direction
-
-    angle = np.arctan2(vec[0], vec[1])
-    directions = [
+directions = [
+        (np.array([ 0.0,  0.0]), 0),
         (np.array([-1.0,  0.0]), 1),  # left
         (np.array([-1.0, -1.0]), 2),  # top_left
         (np.array([ 0.0, -1.0]), 3),  # top
@@ -19,11 +12,24 @@ def vec_to_action(vec: np.ndarray, deadzone: float = 0.05) -> int:
         (np.array([ 1.0,  1.0]), 6),  # bottom_right
         (np.array([ 0.0,  1.0]), 7),  # bottom
         (np.array([-1.0,  1.0]), 8),  # bottom_left
+        (None, 9) #kick it
     ]
 
-    closest_dir, action_idx = min(directions,key=lambda item: abs(np.arctan2(np.cross(vec,item[0]),np.dot(vec,item[0]))))
+def vec_to_action(vec: np.ndarray, deadzone: float = 0.05) -> int:
+
+    vec = np.asarray(vec, dtype=np.float32)
+
+    if np.linalg.norm(vec) < deadzone:
+        return 0  # stay still / release direction
+
+    angle = np.arctan2(vec[0], vec[1])
+    closest_dir, action_idx = min(directions[1:9],key=lambda item: abs(np.arctan2(np.cross(vec,item[0]),np.dot(vec,item[0]))))
 
     return action_idx
+
+def action_to_vec(action: int) -> int:
+
+    return directions[action][0]
 
 def compute_target_aim(
     agent_obs,
@@ -54,6 +60,7 @@ def compute_rondo_actions(
     boundary_goal_proximity: float = 0.1,
     goal_point_angle_proximity: float = 0.2,
     target_proximity: float = 0.05,
+    expand_ratio: float = 2.0,
 ) -> dict[str, int]:
 
     if isinstance(obs,dict):
@@ -72,12 +79,14 @@ def compute_rondo_actions(
 
         #if i == 0:
         #    target_aim_vec, target_aim_idx = compute_target_aim(agent_obs, obs_map, target_proximity)
-        if int(agent_obs[obs_map['target_ball']][-1]):
-            ball_owner = i
+        print(agent_obs[obs_map['ball_owner'])
+        ball_owner = np.where(agent_obs[obs_map['ball_owner']] > 0)[0]
+        if len(ball_owner) == 0:
+            ball_owner = -1
         else:
-            ball_owner = agent_obs[obs_map['team']][-1]
+            ball_owner = ball_owner[0]
 
-        team_rel = agent_obs[obs_map['team']][0:-1].reshape(-1,2)
+        team_rel = agent_obs[obs_map['team']].reshape(-1,2)
         target_rel = agent_obs[obs_map['target_pos']]
 
         action = None
@@ -93,7 +102,7 @@ def compute_rondo_actions(
                 action = 9
         elif (i - ball_owner) % 5 in (1, 5 - 1):
             #agent is neighboring an agent with the ball and should expand the circle
-            desired_point = anchor * 1.5 #expand the circle
+            desired_point = anchor * expand_ratio #expand the circle
             desired_vec = desired_point - pos
         elif np.linalg.norm(anchor-pos) > anchor_max_dev:
             desired_vec = anchor - pos

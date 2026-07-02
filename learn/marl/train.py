@@ -34,6 +34,7 @@ from ray.rllib.utils.metrics import (
 from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
+from controllers.football_control import compute_rondo_actions
 from controllers.predator_prey_control import compute_slot_actions
 from learn.marl.callbacks import CurriculumCallback, LogRawEpisodeReturn
 
@@ -172,7 +173,10 @@ def _collect_controller_dataset(cfg: dict, episodes: int):
         trajectory = []
 
         for _ in range(cfg['env']['max_episode_length']):
-            expert_actions = compute_slot_actions(obs,env.unwrapped.obs_map)
+            if 'predator_prey' in cfg['env']['scenario']:
+                expert_actions = compute_slot_actions(obs,env.unwrapped.obs_map)
+            elif 'football' in cfg['env']['scenario']:
+                expert_actions = compute_rondo_actions(obs,env.unwrapped.obs_map)
 
             predator_obs = {
                 agent: np.asarray(obs[agent], dtype=np.float32).copy()
@@ -300,8 +304,8 @@ def _maybe_pretrain_policy(algo, cfg: dict, logdir: str) -> bool:
             },
         )
 
-    summary = _evaluate_shared_policy(algo, cfg, runs=eval_runs)
-    print(f'Pretrain evaluation over {eval_runs} runs: {summary}')
+    #summary = _evaluate_shared_policy(algo, cfg, runs=eval_runs)
+    #print(f'Pretrain evaluation over {eval_runs} runs: {summary}')
 
     pretrain_dir = os.path.join(logdir, 'checkpoint0_pretrain')
     _save_checkpoint(algo, pretrain_dir)

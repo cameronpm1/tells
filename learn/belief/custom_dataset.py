@@ -116,10 +116,10 @@ class CustomDataset(Dataset):
         #a_idx = idx%3
         #agent_name = data_labels[a_idx]
         #print(type(datapoint[str(agent_name)][0]))
-        data_rel = np.array(datapoint['target_true']).flatten() 
+        data_rel = np.array(datapoint['input']).flatten() 
         #last_pos = xy_pairs[-2:]  
 
-        label_rel = np.array(datapoint['team_true']).flatten()  
+        label_rel = np.array(datapoint['label']).flatten()  
         #label_rel = label - np.tile(last_pos,4)
 
         #xy_pairs[0:int(len(label)/2)] = label[0:int(len(label)/2)]

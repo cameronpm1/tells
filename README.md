@@ -17,9 +17,13 @@ git submodule update --init --recursive
 
 conda env create -f environment.yml
 
+conda activate tells
+
 python -m pip install "pip<23" "setuptools==65.5.0" "wheel<0.40"
 
 python -m pip install -r requirements.txt
+
+pip install -e external/pybullet-drones
 ```
 
 Check if google-football is if not download it from git manually:
@@ -31,7 +35,7 @@ git clone git@github.com:google-research/football.git
 
 cd football
 
-pip install -r requirements
+pip install -r requirements.txt
 
 python -m pip install .
 ```

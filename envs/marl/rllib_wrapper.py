@@ -20,6 +20,7 @@ class RLLibWrapper(MultiAgentEnv):
             self,
             env,
             name,
+            obs_packaging_func,
             eval: bool = False,
             belief_kwargs: Optional[dict] = None,
             dimension: int = 2,
@@ -33,7 +34,7 @@ class RLLibWrapper(MultiAgentEnv):
         self.n_agents = env.n_agents
         self.belief_kwargs = belief_kwargs
         self.agents = deepcopy(env.agents)
-        self.possible_agents = deepcopy(env.agents)
+        self.obs_packaging_func = obs_packaging_func
         self.last_raw_reward = None
 
         self.single_observation_spaces = {
@@ -56,7 +57,7 @@ class RLLibWrapper(MultiAgentEnv):
         if belief_kwargs is not None and belief_kwargs['on']:
             self.belief = True
             self.belief_model = belief_kwargs['model']
-            self.belief_n = 10
+            self.belief_n = belief_kwargs['min_obs']
             self.obs_history = []
         else:
             self.belief = False
@@ -90,12 +91,7 @@ class RLLibWrapper(MultiAgentEnv):
         #print(obs.keys(),rew.keys(),terminated.keys(),truncated.keys(),_.keys())
         
         if self.belief:
-            partial_obs = {}
-            for agent in self.agents:
-                pos = obs[agent][self.env.obs_map['self_pos']]
-                partial_obs[agent+'_partial'] = obs[agent][self.env.obs_map['target_pos'] + pos]
-                predictions[agent] = obs[agent][self.env.obs_map['team']] + np.tile(pos,self.n_agents-1)
-            self.obs_history.append(partial_obs)
+            self.obs_history.append(obs)
         
         infos['__common__'] = {}
         infos['__common__']['raw_reward'] = sum(rew.values())
@@ -104,24 +100,19 @@ class RLLibWrapper(MultiAgentEnv):
 
         #fill in observations
         if self.belief:
-            converted_obs = self.convert_predator_prey_obs(self.obs_history, self.prediction_history)
+            converted_obs, obs_idxs = self.obs_packaging_func(self.obs_history, self.env.obs_map, self.agents, min_obs=self.belief_n, noise=None)
 
             predictions = {}
             errors = []
-            for agent_id, agent_obs in obs.items():
-                if 'partial' in agent_id:
-                    continue
-                team_state = self.belief_model.model(converted_obs[agent_id+'_partial'])
-                predictions[agent_id] = team_state.detach().cpu().numpy()[-self.dim*(self.n_agents-1):]
-                team_state = team_state.detach().cpu().numpy()[-self.dim*(self.n_agents-1):] + np.tile(partial_obs[agent_id+'_partial'][2:],2)
-                error = self.permutation_invariant_error(team_state, obs[agent_id][self.env.obs_map['team']])
-                agent_obs[self.env.obs_map['team']] = team_state
-                predictions[agent_id] = team_state 
+            for agent, agent_obs in obs.items():
+                team_state = self.belief_model.model(converted_obs[agent]['input']).detach().cpu().numpy()[[obs_idxs]]
+                error = self.permutation_invariant_error(team_state, agent_obs[self.env.obs_map['team']])
+                self.obs_history[agent][self.env.obs_map['team']] = team_state
                 errors.append(error)
+                predictions[agent] = team_state
             avg_error = np.average(errors)
             infos['__common__']['belief_error'] = avg_error
             self.prediction_history.append(predictions)
-
         return obs,rew,terminated,truncated,infos
     
     def reset(self, **kwargs):
@@ -137,33 +128,15 @@ class RLLibWrapper(MultiAgentEnv):
         if self.belief:
             self.obs_history = []
             self.prediction_history = []
-            partial_obs = {}
+
             predictions = {}
             for agent in self.agents:
-                pos = obs[agent][self.env.obs_map['self_pos']]
-                partial_obs[agent+'_partial'] = obs[agent][self.env.obs_map['target_pos'] + pos]
-                predictions[agent] = obs[agent][self.env.obs_map['team']] + np.tile(pos,self.n_agents-1)
+                predictions[agent] = obs[agent][self.env.obs_map['team']]
+
+            self.obs_history.append(obs)
             self.prediction_history.append(predictions)
 
-            self.obs_history.append(partial_obs)
-            converted_obs = self.convert_predator_prey_obs(self.obs_history, self.prediction_history)
-
-            predictions = {}
-            errors = []
-            for agent_id, agent_obs in obs.items():
-                if 'partial' in agent_id:
-                    continue
-                pos = obs[agent][self.env.obs_map['self_pos']]
-                team_state = self.belief_model.model(converted_obs[agent_id+'_partial'])
-                team_state = team_state.detach().cpu().numpy()[-self.dim*(self.n_agents-1):] # + np.tile(pos,self.n_agents-1)
-                error = self.permutation_invariant_error(team_state, obs[agent_id][self.env.obs_map['team']])
-                agent_obs[self.env.obs_map['team']] = team_state
-                errors.append(error)
-                predictions[agent_id] = team_state + np.tile(pos,self.n_agents-1)
-            avg_error = np.average(errors)
-            infos['__common__']['belief_error'] = avg_error
-            self.prediction_history.append(predictions)
-
+            infos['__common__']['belief_error'] = 0.0
 
         return obs,infos
     
@@ -175,35 +148,7 @@ class RLLibWrapper(MultiAgentEnv):
 
     def set_difficulty(self, difficulty):
         self.env.set_difficulty(difficulty)
-
-    def convert_predator_prey_obs(self,obs,predictions):
-        '''
-        convert observation history into timeseries of relateive advesrary and goal observations
-        '''
-
-        converted_obs = {}
-
-        for agent in obs[0].keys():
-            if 'partial' in agent:
-                agent_obs = []
-                offset = obs[-1][agent][self.env.obs_map['self_pos']] #np.tile(obs[-1][agent][self.env.obs_map['self_pos']],2)
-                for i in range(self.belief_n):
-                    if i >= len(obs):
-                        agent_obs.append(obs[0][agent] - offset)
-                    else:
-                        agent_obs.append(obs[-(i+1)][agent] - offset)
-                agent_obs.reverse()
-                agent_obs = np.array(agent_obs).flatten()
-                
-                if len(predictions) == 1:
-                    team_obs = predictions[-1][agent.split('_')[0]] - offset
-                else:
-                    team_obs = predictions[-1][agent.split('_')[0]] - offset
-
-                converted_obs[agent] = torch.from_numpy(np.concatenate((team_obs,obs[-1][agent][self.env.obs_map['target_goal']],agent_obs))).to(torch.float32)
-
-
-        return converted_obs
+        
 
     def permutation_invariant_error(self, pred, target):
         '''

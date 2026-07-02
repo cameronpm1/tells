@@ -77,7 +77,7 @@ class PFWrapper(MultiAgentEnv):
             self.consecutive_agent_count[agent] = 0
 
         
-        self.switch_time = 2 #number of timesteps it takes to observe new agent
+        self.switch_time = 1 #number of timesteps it takes to observe new agent
         self.min_confidence_agent = {}
 
         self._step = 0
@@ -120,10 +120,7 @@ class PFWrapper(MultiAgentEnv):
         infos['__common__'] = {}
         for agent in self.agents:
             pos = obs[agent][self.obs_map['self_pos']]
-            goal = obs[agent][self.obs_map['target_goal']] 
-            if self.env.goal_rel:
-                goal = goal + np.tile(pos,len(goal)//self.dim)
-            self.particle_filters[agent].propagate_all(new_obs[agent][self.obs_map['self']],goal)
+            self.particle_filters[agent].propagate_all(new_obs[agent])
 
             pf_obs = self.particle_filters[agent].get_observation()
             new_obs[agent][self.obs_map['target_pos']] = pf_obs['target']['pos'] - pos
@@ -197,10 +194,10 @@ class PFWrapper(MultiAgentEnv):
             for agent2 in self.agents:
                 if agent != agent2:
                     start_dict[agent2] = obs[agent2][self.obs_map['self_pos']] #+ np.random.normal(0, 0.1, 2)
-            prey_start = obs['target'][self.obs_map['self_pos']]
+            target_start = obs['target'][self.obs_map['self_pos']]
             self.particle_filters[agent].reset(
-                agent_start_pos = start_dict,
-                prey_start_pos = prey_start,
+                team_start_pos = start_dict,
+                target_start_pos = target_start,
             )
             self.switch_count[agent] = 0
             self.observing_agent[agent] = 'target'

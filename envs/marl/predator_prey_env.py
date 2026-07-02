@@ -39,36 +39,10 @@ class PredatorPreyEnv(gymnasium.Env):
         self.adversary_controller = adversary_controller
         self.local_observations = local_observations
         self.env.unwrapped.local_observations = local_observations
-        self.reward_cfg = {
-            'controller_action_scale': 5.0,
-            'oob_penalty': 3000.0,
-            'surround_radius': 1.8,
-            'ideal_radius': 1.5,
-            'radius_tolerance': 0.55,
-            'hold_goal_radius': 0.45,
-            'hold_coverage_min': 0.45,
-            'hold_close_fraction': 2.0 / 3.0,
-            'hold_ring_min': 0.20,
-            'success_hold_steps': 8,
-            'success_bonus': 750.0,
-            'progress_scale': 16.0,
-        }
-        if reward_kwargs is not None:
-            self.reward_cfg.update(reward_kwargs)
-        self.controller_cfg = {
-            'action_threshold': 0.45,
-            'force_exponent': 2.5,
-            'boundary_margin': 0.75,
-            'prey_sensitivity': 1.2,
-            'prey_avoid_radius': 2.4,
-            'prey_avoid_gain': 1.5,
-        }
-        if controller_kwargs is not None:
-            self.controller_cfg.update(controller_kwargs)
+        self.reward_cfg = reward_kwargs
+        self.controller_cfg = controller_kwargs
 
         self.obs = None
-        self.seed = seed
-
         self.ts = 0
         self.hold_steps = 0
         self.last_metrics = {}
@@ -163,15 +137,7 @@ class PredatorPreyEnv(gymnasium.Env):
         return deepcopy(self.obs), {a: {} for a in self.agents}
 
     def get_obs(self):
-
         return self.obs
-
-    def seed(
-        self,
-        seed:int
-    ):
-
-        self.seed = seed
 
     def render_rgb(self):
         """
@@ -236,11 +202,11 @@ class PredatorPreyEnv(gymnasium.Env):
         touch_radius = 2.0 * predators[0].size
         touch_penalty = float(np.mean(np.clip(touch_radius - predator_target_dists, 0.0, None)))
 
-        radius_error = np.abs(predator_target_dists - self.reward_cfg['ideal_radius'])
+        radius_error = predator_target_dists - self.reward_cfg['ideal_radius']
         ring_score = float(
             np.mean(
                 np.clip(
-                    1.0 - radius_error / self.reward_cfg['radius_tolerance'],
+                    1.0 - abs(radius_error) / self.reward_cfg['radius_tolerance'],
                     0.0,
                     1.0,
                 )
@@ -252,8 +218,9 @@ class PredatorPreyEnv(gymnasium.Env):
         
         # ANGLE CALCULATION FOR COVERAGE
 
-        coverage_score = 1.0
-        if len(predator_target_vecs) > 1:
+        if np.average(radius_error) > self.reward_cfg['radius_tolerance']:
+            coverage_score = 0
+        else:
             # We only need a rough "are they wrapped around the prey?" signal here,
             # so the largest angular gap is a decent proxy for broken containment.
             angles = np.sort(np.arctan2(predator_target_vecs[:, 1], predator_target_vecs[:, 0]))
@@ -330,7 +297,6 @@ class PredatorPreyEnv(gymnasium.Env):
         team_reward = 0
 
         team_reward = (
-            - (self.reward_cfg['distance_scale'] * metrics['target_goal_dist'])
             + (self.reward_cfg['slot_scale'] * metrics['controller_action_reward'])
             + (self.reward_cfg['coverage_scale'] * metrics['coverage_score'])
             - (self.reward_cfg['touch_penalty_scale'] * metrics['touch_penalty'])

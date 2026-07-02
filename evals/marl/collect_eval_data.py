@@ -148,6 +148,7 @@ def data_worker(
         done = {"__all__": False}
         step = 0
         obs_history = []
+        obs_history.append(obs)
 
         #for agent_name in cfg['env']['learned_agent_list']:
 
@@ -164,39 +165,15 @@ def data_worker(
                 actions[agent_id] = action
             step += 1
 
-            
-            obs_history.append(obs[episode_agent][obs_map['team']] + np.tile(pos,env.n_agents-1))
             obs, rewards, terminations, truncations, infos = env.step(actions)
-            pos = obs[episode_agent][obs_map['target_goal']]
+            obs_history.append(obs)
 
             done = {
                 "__all__": terminations["__all__"] or truncations["__all__"]
             }
 
-
-            if cfg['env']['scenario'] == 'predator_prey':
-                target_obs[episode_agent].append(obs[episode_agent][obs_map['target_pos']] + pos)
-
-            ts_target_obs = []
-            for i in range(min_obs):
-                idx = min_obs - i
-                if idx >= len(target_obs[episode_agent]):
-                    ts_target_obs.append(target_obs[episode_agent][-1] - pos)
-                else:
-                    ts_target_obs.append(target_obs[episode_agent][-idx] - pos)
-            ts_target_obs = np.array(ts_target_obs).flatten()
-
-            if cfg['env']['scenario'] == 'predator_prey':
-                team_obs = (obs_history[-1] - np.tile(pos,env.n_agents-1)) + np.random.uniform(-1.0,1.0,size=obs_history[-1].shape)
-
-            full_obs = {}
-            #for agent_name in cfg['env']['learned_agent_list']:
-            full_obs[episode_agent] = {}
-            full_obs[episode_agent]['target_true'] = np.concatenate((team_obs,obs[episode_agent][obs_map['target_goal']],ts_target_obs))
-            full_obs[episode_agent]['team_true'] = np.concatenate((obs_history[-1] - np.tile(pos,env.n_agents-1),obs[episode_agent][obs_map['team']]))
+            data_point, _ = env.obs_packaging_func(obs_history, obs_map, [episode_agent], min_obs=min_obs)
             save_path = os.path.join(save_dir,'step_'+str(step)+'_'+episode_agent+'.npz')
-            np.savez(save_path,**full_obs[episode_agent])
+            np.savez(save_path,**data_point[episode_agent])
 
-        obs, _ = env.reset()
-    
 

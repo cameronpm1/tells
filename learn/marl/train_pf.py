@@ -76,6 +76,7 @@ def _find_latest_checkpoint(logdir: str) -> tuple[str | None, int]:
             continue
 
         training_iteration = _load_checkpoint_iteration(entry.path)
+        print(entry,training_iteration)
         if training_iteration is None:
             continue
 
@@ -331,6 +332,7 @@ def train(config_path: str, kwargs=None):
 
     resume_dir, resume_iter = _find_latest_checkpoint(logdir)
     start_iter = 0
+
     if resume_dir is not None:
         print(f'Resuming from checkpoint: {resume_dir}')
         algo_build.restore(resume_dir)
@@ -385,7 +387,7 @@ def make_ray_config(
     ------
     ray_config class
     '''
-
+    belief_kwargs = {}
     #make env function 
     def env_maker(config):
 

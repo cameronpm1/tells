@@ -54,22 +54,11 @@ def eval(
         print('No model directory provided...')
         exit()
 
-    save_dir = os.path.join(checkpoint_dir,'videos')
+    save_dir = os.path.join(checkpoint_dir,'videos_pf')
     mkdir(save_dir)
 
     for i in range(n_runs):
-        '''
-        if belief:
-            eval_single_episode_belief(
-                env=env,
-                cfg=cfg,
-                algo=algo,
-                belief_model=belief_model,
-                save_dir=save_dir,
-                idx=i,
-            )
-        else:
-        '''
+
         eval_single_episode(
             env=env,
             cfg=cfg,

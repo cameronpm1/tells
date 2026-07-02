@@ -1,7 +1,7 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/drones1
+logdir: /home/cameron/tells/logs/marl/fire1
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 alg:
@@ -9,7 +9,7 @@ alg:
   lr : 0.00003
   gamma: 0.99
   nenvs : 2
-  cpu_envs: 2
+  cpu_envs: 4
   target_ent: 0.1
   batch: 4096
   batch_size: 256
@@ -26,7 +26,7 @@ alg:
   vf_clip_param: 10.0
   grad_clip: 0.25
   pretrain:
-    enabled: true
+    enabled: false
     episodes: 900
     epochs: 28
     batch_size: 1024
@@ -36,27 +36,17 @@ alg:
     eval_runs: 50
 
 env:
-  scenario: 3_agent_drones
-  max_episode_length: 400 #in seconds
-  agent_list: ['agent0', 'agent1', 'agent2', 'target']
-  learned_agent_list: ['agent0', 'agent1', 'agent2']
-  env_kwargs:
-    grid_size: 20
-    num_goal_boxes: 5
-    num_protectors: 3
-    goal_box_spacing: 1.0
-    goal_box_half_extents: [0.5, 0.5, 0.1]
-    protection_radius: &protection_radius 1.1
-    intrusion_radius: 0.5
-    base_altitude: 0.5
-    base_speed: 6.0
-    speed_ratio: 0.6
+  scenario: 4_drone_fire
+  max_episode_length: 300 #MUST ALSO EDIT IN BUILDER AT BOTTOM OF ENV FILE
+  agent_list: ['agent0', 'agent1', 'agent2', 'agent3', 'target']
+  learned_agent_list: ['agent0', 'agent1', 'agent2', 'agent3']
+  reward_kwargs:
+    pass_reward: 80.0
+    target_steal_penalty: -750.0
+    deviation_threshold: 0.1
+    deviation_scale: 0.5
   controller_kwargs:
-    adversary_repulsion_radius: 0.75
-    adversary_repulsion_gain: 1.0
-    adversary_attraction_gain: 1.0
-    adversary_replan_steps: 10
-    protection_radius: *protection_radius
+    dead_zone: 0.01
 
 sim:
   n: 3 #number of pursuit agents

@@ -3,6 +3,7 @@ import numpy
 from typing import Optional, Union
 
 from envs.marl.pf_wrapper import PFWrapper
+from evals.marl.observation_packaging import *
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.drones_env import PredatorPreyAviary
 from envs.marl.particle_filter import PredatorPreyParticleFilter
@@ -39,6 +40,9 @@ def make_marl_env(
 
     elif 'footbal' in env_name:
         return make_football_env(config,seed,wrap,eval,render_mode,belief_kwargs)
+
+    elif 'fire' in env_name:
+        return make_fire_env(config,seed,wrap,eval,render_mode,belief_kwargs)
     
     else:
         raise NotImplementedError(f'Env {env_name} not implemented yet')
@@ -85,7 +89,13 @@ def make_predator_prey_env(
     )
 
     if wrap == 'rllib':
-        env = RLLibWrapper(env,'predator_prey',eval,belief_kwargs)
+        env = RLLibWrapper(
+            env=env,
+            name='predator_prey',
+            obs_packaging_func=predator_prey_obs_packaging,
+            eval=eval,
+            belief_kwargs=belief_kwargs,
+        )
     elif wrap == 'pf':
         env = PFWrapper(
             env,
@@ -96,10 +106,13 @@ def make_predator_prey_env(
             eval=eval,
             belief_kwargs=config['env']['belief_kwargs'],
         )
+    elif wrap is None:
+        pass
     else:
-        print('Wrapper not supported for football env...')
-    
+        print('Wrapper not supported for mpe2 env...')
+
     return env
+
 
 def make_drones_env(
         config: dict,
@@ -135,11 +148,20 @@ def make_drones_env(
     )
 
     if wrap == 'rllib':
-        env = RLLibWrapper(env,'drones',eval,belief_kwargs)
+        env = RLLibWrapper(
+            env=env,
+            name='drones',
+            obs_packaging_func=predator_prey_obs_packaging,
+            eval=eval,
+            belief_kwargs=belief_kwargs
+        )
+    elif wrap is None:
+        pass
     else:
-        print('Wrapper not supported for football env...')
-    
+        print('Wrapper not supported for drone env...')
+
     return env
+
 
 def make_football_env(
         config: dict,
@@ -162,7 +184,7 @@ def make_football_env(
         if True wraps env in rllib wrapper
     '''
     from envs.marl.football_env import CirclePass5v1Env
-    from controllers.football_control import adversary_controller
+    from controllers.football_control import adversary_controller, compute_rondo_actions, action_to_vec
 
     env = CirclePass5v1Env(
         agent_list=config['env']['learned_agent_list'],
@@ -175,7 +197,69 @@ def make_football_env(
     )
 
     if wrap == 'rllib':
-        env = RLLibWrapper(env,'drones',eval,belief_kwargs)
+        env = RLLibWrapper(
+            env=env,
+            name='football',
+            obs_packaging_func=predator_prey_obs_packaging,
+            eval=eval,
+            belief_kwargs=belief_kwargs
+        )
+    elif wrap == 'pf':
+        env = PFWrapper(
+            env,
+            particle_filter = FootballParticleFilter,
+            agent_control_function = lambda obs, obs_map: action_to_vec(compute_rondo_actions(obs, obs_map)),
+            target_control_function = lambda obs, obs_map: action_to_vec(adversary_controller(obs, obs_map, config['env']['controller_kwargs'])),
+            dim=2,
+            eval=eval,
+            belief_kwargs=config['env']['belief_kwargs'],
+        )
+    elif wrap is None:
+        pass
+    else:
+        print('Wrapper not supported for football env...')
+
+    return env
+
+def make_fire_env(
+        config: dict,
+        seed: Optional[int] = None,
+        wrap: Optional[str] = 'rllib',
+        eval: bool = False,
+        render_mode: Optional[bool] = False,
+        belief_kwargs: Optional[dict] = None,
+):
+    '''
+    initialize drones_env using pybullet-drones
+
+    input
+    -----
+    config_dir:dict
+        config dictionary
+    seed:int
+        seed
+    wrap:bool
+        if True wraps env in rllib wrapper
+    '''
+    from envs.marl.fire_env import DroneFireEnv, probabilistic_fire_controller
+
+    env = DroneFireEnv(
+        drone_names=config['env']['learned_agent_list'],
+        fire_controller=probabilistic_fire_controller,
+        controller_kwargs=config['env'].get('controller_kwargs'),
+        reward_kwargs = config['env'].get('reward_kwargs'),
+    )
+
+    if wrap == 'rllib':
+        env = RLLibWrapper(
+            env=env,
+            name='fire',
+            obs_packaging_func=predator_prey_obs_packaging,
+            eval=eval,
+            belief_kwargs=belief_kwargs
+        )
+    elif wrap is None:
+        pass
     else:
         print('Wrapper not supported for football env...')
 

@@ -5,6 +5,7 @@ import numpy as np
 from util.util import mkdir, load_config
 from envs.marl.football_env import CirclePass5v1Env
 from envs.marl.drones_env import PredatorPreyAviary
+from controllers.football_control import compute_rondo_actions
 from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
 from envs.marl.make_env import make_drones_env, make_predator_prey_env, make_marl_env
 
@@ -78,7 +79,8 @@ def football_test():
     max_episode_length = 900
 
     for step in range(max_episode_length):
-        actions = np.random.randint(0, 10, size=5)
+        #actions = np.random.randint(0, 10, size=5)
+        actions = compute_rondo_actions(obs, env.env.obs_map)
         obs, reward, term, trunc, info = env.step(actions)
 
         if term['__all__'] or trunc['__all__']:
@@ -89,6 +91,7 @@ def football_test():
         images1.append(frame1)
         #images2.append(frame2)
     obs = env.reset()
+    print('!!!!!!!!!!!!!!!!!!')
     for step in range(max_episode_length):
         actions = np.random.randint(0, 10, size=5)
         obs, reward, term, trunc, info = env.step(actions)
@@ -119,6 +122,37 @@ def football_test():
 
     env.close()
 
+def fire_test():
+    config_path = '/home/cameron/tells/confs/fire/4a_game.yaml'
+    cfg = load_config(config_path)
+
+    env = make_marl_env(config=cfg,wrap='rllib')
+
+    obs = env.reset()
+    images = []
+
+    max_episode_length = 20
+
+    for step in range(max_episode_length):
+        actions = {'agent0': 0, 'agent1': 0, 'agent2': 0, 'agent3': 0}
+        obs, reward, term, trunc, info = env.step(actions)
+
+        if term['__all__'] or trunc['__all__']:
+            break
+
+        frame = env.env.render_rgb()
+        images.append(frame)
+
+    save_file = "test_vid.gif"
+    print("generating video in " + save_file)   
+    save_rgb_gif(images, save_file)
+
+    #save_file = "test_vid2.gif"
+    #print("generating video in " + save_file)   
+    #save_rgb_gif(images2, save_file)
+
+    env.close()
+
 
 if __name__ == "__main__":
     #test_boat_dynamics()
@@ -130,3 +164,4 @@ if __name__ == "__main__":
     #test_usv_env()
     #drone_test()
     football_test()
+    #fire_test()

@@ -2,7 +2,7 @@ seed: &seed 23 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
 min_obs: 10
-logdir: logs/marl/ppo_bc_new10
+logdir: logs/marl/ppo_bc_final
 notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 alg:
@@ -17,7 +17,7 @@ alg:
   num_gpus: 0
   pi : [256, 256, 256]
   vf : [256, 256, 256]
-  timesteps: 3000
+  timesteps: 5000
   checkpoint_freq: 250
   minibatch_size: 512
   num_epochs: 3
@@ -66,16 +66,16 @@ env:
   reward_kwargs:
     controller_action_scale: 5.0
     oob_penalty: 3000.0
-    surround_radius: 2.4
-    ideal_radius: 2.0
-    radius_tolerance: 0.7
-    hold_goal_radius: 0.9
-    hold_coverage_min: 0.3
-    hold_close_fraction: 0.34
-    hold_ring_min: 0.05
+    surround_radius: 1.8
+    ideal_radius: 1.5
+    radius_tolerance: 0.55
+    hold_goal_radius: 0.45
+    hold_coverage_min: 0.45
+    hold_close_fraction: 0.66
+    hold_ring_min: 0.2
     success_hold_steps: 8
     success_bonus: 750.0
-    step_cost: 0.25
+    step_cost: 0.7
     coverage_scale: 5.0
     slot_scale: 0.5
     distance_scale: 0.0

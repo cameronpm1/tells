@@ -31,7 +31,6 @@ google-auth==2.55.1
 googleapis-common-protos==1.75.0
 grpcio==1.81.1
 gym==0.21.0
--e git+https://github.com/utiasDSL/gym-pybullet-drones.git@90b178aba69b09085dd70e7a1e88bb58ca00b4c9#egg=gym_pybullet_drones&subdirectory=../../../external/pybullet-drones
 gymnasium==1.3.0
 hydra-core==1.3.3
 idna==3.18
