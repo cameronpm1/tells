@@ -79,7 +79,7 @@ def compute_rondo_actions(
 
         #if i == 0:
         #    target_aim_vec, target_aim_idx = compute_target_aim(agent_obs, obs_map, target_proximity)
-        print(agent_obs[obs_map['ball_owner'])
+
         ball_owner = np.where(agent_obs[obs_map['ball_owner']] > 0)[0]
         if len(ball_owner) == 0:
             ball_owner = -1

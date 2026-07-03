@@ -7,7 +7,7 @@ def predator_prey_obs_packaging(
         obs_map, 
         agent_list,
         min_obs=10, 
-        noise=0.3
+        noise=1.0
     ):
 
     obs_dict = {}
@@ -44,10 +44,12 @@ def predator_prey_obs_packaging(
             last_team_obs = deepcopy(team_obs)
 
         if noise is not None:
-            team_obs += np.random.normal(0,noise,team_obs.shape)
+            noise = np.random.normal(0,noise,team_obs.shape)
+        else:
+            noise = np.zeros_like(team_obs)
 
         data_point = {}
-        data_point['input'] = np.concatenate((allocentric_obs,last_team_obs))
+        data_point['input'] = np.concatenate((allocentric_obs,last_team_obs + noise))
         data_point['label'] = np.concatenate((last_team_obs,team_obs))
 
         obs_dict[agent] = data_point

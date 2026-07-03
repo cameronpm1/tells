@@ -3,7 +3,7 @@ seed: 2
 if_cuda: True
 gamma: 0.5
 log_dir: 'logs/belief/'
-label: 'predator_prey_test1'
+label: 'predator_prey_test2'
 train_batch: 256
 val_batch: 256
 test_batch: 256

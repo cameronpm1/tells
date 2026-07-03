@@ -72,7 +72,7 @@ def football_test():
 
     env = make_marl_env(config=cfg,wrap='rllib')
 
-    obs = env.reset()
+    obs, _ = env.reset()
     images1 = []
     images2 = []
 
@@ -90,10 +90,10 @@ def football_test():
         #frame2 = env.env.render_rgb_old()
         images1.append(frame1)
         #images2.append(frame2)
-    obs = env.reset()
+    obs, _ = env.reset()
     print('!!!!!!!!!!!!!!!!!!')
     for step in range(max_episode_length):
-        actions = np.random.randint(0, 10, size=5)
+        actions = compute_rondo_actions(obs, env.env.obs_map)
         obs, reward, term, trunc, info = env.step(actions)
         if term['__all__'] or trunc['__all__']:
             break

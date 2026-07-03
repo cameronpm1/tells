@@ -637,8 +637,8 @@ class PredatorPreyScenario(BaseScenario):
             else:
                 rel_positions.append(other.state.p_pos - pos)
 
-        obs['team'] = np.array(rel_positions).flatten()
-
+        obs['team'] = np.array(rel_positions).flatten() + np.random.normal(0, 0.3, size=(len(rel_positions)*2,))
+        
         
         predator_names = [name for name in self.agents if 'agent' in name]
         agent_id = np.zeros(len(predator_names), dtype=np.float32)

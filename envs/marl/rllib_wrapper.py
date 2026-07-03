@@ -91,7 +91,7 @@ class RLLibWrapper(MultiAgentEnv):
         #print(obs.keys(),rew.keys(),terminated.keys(),truncated.keys(),_.keys())
         
         if self.belief:
-            self.obs_history.append(obs)
+            self.obs_history.append(deepcopy(obs))
         
         infos['__common__'] = {}
         infos['__common__']['raw_reward'] = sum(rew.values())
@@ -101,18 +101,19 @@ class RLLibWrapper(MultiAgentEnv):
         #fill in observations
         if self.belief:
             converted_obs, obs_idxs = self.obs_packaging_func(self.obs_history, self.env.obs_map, self.agents, min_obs=self.belief_n, noise=None)
-
             predictions = {}
             errors = []
             for agent, agent_obs in obs.items():
-                team_state = self.belief_model.model(converted_obs[agent]['input']).detach().cpu().numpy()[[obs_idxs]]
+                team_state = self.belief_model.model(torch.from_numpy(converted_obs[agent]['input']).to(torch.float32))
+                team_state = team_state.detach().cpu().numpy()[obs_idxs]
                 error = self.permutation_invariant_error(team_state, agent_obs[self.env.obs_map['team']])
-                self.obs_history[agent][self.env.obs_map['team']] = team_state
+                self.obs_history[-1][agent][self.env.obs_map['team']] = team_state
                 errors.append(error)
                 predictions[agent] = team_state
             avg_error = np.average(errors)
             infos['__common__']['belief_error'] = avg_error
             self.prediction_history.append(predictions)
+            obs = self.obs_history[-1]
         return obs,rew,terminated,truncated,infos
     
     def reset(self, **kwargs):
@@ -133,7 +134,7 @@ class RLLibWrapper(MultiAgentEnv):
             for agent in self.agents:
                 predictions[agent] = obs[agent][self.env.obs_map['team']]
 
-            self.obs_history.append(obs)
+            self.obs_history.append(deepcopy(obs))
             self.prediction_history.append(predictions)
 
             infos['__common__']['belief_error'] = 0.0

@@ -33,8 +33,8 @@ sys.path.insert(0, str(FOOTBALL_REPO))
 compute team initial positions
 '''
 
-rx = 0.21
-ry = 0.135
+rx = 0.28 #0.21
+ry = 0.18 #0.135
 n_passers = 5
 
 AGENT_ANCHORS = []
@@ -287,28 +287,26 @@ class CirclePass5v1Env(gym.Env):
 
         reward = 0
         
-        team_ball_state = np.array([obs[agent][self.obs_map['target_ball']][-1] for agent in self.agents])
+        ball_owner = np.where((obs['agent0'][self.obs_map['ball_owner']]) == 1)[0]
         target_has_ball = obs['target'][self.obs_map['target_ball_owned']][0]
         if target_has_ball:
-            print('fuck')
             return self.reward_kwargs['target_steal_penalty']
         else:
-            ball_ownership = np.where(team_ball_state == 1)[0]
-            if len(ball_ownership) > 0:
+            if len(ball_owner) > 0:
                 if self.prev_ball_owned_player == -1:
-                    self.prev_ball_owned_player = ball_ownership[0]
+                    self.prev_ball_owned_player = ball_owner[-1]
                 else:
-                    if self.prev_ball_owned_player != ball_ownership[0]:
-                        if (self.prev_ball_owned_player - ball_ownership[0]) % 5 in (1, 5 - 1):
+                    if self.prev_ball_owned_player != ball_owner[-1]:
+                        if (self.prev_ball_owned_player - ball_owner[-1]) % 5 in (1, 5 - 1):
                             reward += self.reward_kwargs['pass_reward']
                         else:
                             #double reward for non-neighbor passes
                             reward += 2*self.reward_kwargs['pass_reward']
-                        self.prev_ball_owned_player = ball_ownership[0]
+                        self.prev_ball_owned_player = ball_owner[-1]
 
         dev = np.linalg.norm(self.raw_obs[0]['left_team'][1:] - AGENT_ANCHORS, axis=1)
         dev_threshold = [1 if d > self.reward_kwargs['deviation_threshold'] else 0 for d in dev]
-        reward -= sum(dev_threshold) * self.reward_kwargs['deviation_scale']
+        reward -= (5 - sum(dev_threshold)) * self.reward_kwargs['deviation_scale']
 
         return reward
 
