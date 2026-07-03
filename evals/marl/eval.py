@@ -51,6 +51,7 @@ def eval(
             config_dir=belief_config_dir,
             ckpt_dir=belief_dir,
         )
+        belief_kwargs['min_obs'] = cfg['min_obs']
     else:
         belief_kwargs['on'] = False
 

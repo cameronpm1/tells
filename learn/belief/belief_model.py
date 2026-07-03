@@ -9,8 +9,6 @@ from typing import Optional
 from torch import nn
 import pytorch_lightning as pl
 import torch.nn.functional as F
-from torchvision import transforms
-import torchvision.models as models
 from torch.utils.data import DataLoader
 
 from util.util import *
@@ -237,7 +235,8 @@ class BeliefModel(pl.LightningModule):
     def __build_model(self):
         #if self.hparams.model_name == 'bayesianCNN':
         #self.model = NN2CNN(self.hparams.input_channels,self.hparams.output_channels)
-        self.model = NN(self.hparams.input_channels,self.hparams.output_channels)
+        if self.hparams.model_name == 'predator_prey_NN':
+            self.model = predator_prey_NN(self.hparams.input_channels,self.hparams.output_channels)
         self.loss_func = PermutationInvariantMSE() #torch.nn.MSELoss()
         self.val_loss_func = PermutationInvariantMSE()
 

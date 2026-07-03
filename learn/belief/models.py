@@ -65,7 +65,7 @@ class NN2CNN(nn.Module):
 
 		return x
 
-class NN(nn.Module):
+class predator_prey_NN(nn.Module):
 
 	def __init__(self, 
                 input_channels:int,

@@ -15,7 +15,7 @@ from omegaconf import DictConfig, OmegaConf
 from hydra.core.hydra_config import HydraConfig
 from torch.utils.data import DataLoader, TensorDataset
 
-from ray.tune.logger import pretty_print
+from ray.tune.logger import pretty_print, TBXLogger
 from ray.rllib.utils.test_utils import (
     add_rllib_example_script_args,
     run_rllib_example_script_experiment,
@@ -35,14 +35,11 @@ from util.util import mkdir, load_config
 from envs.marl.make_env import make_marl_env
 from envs.marl.rllib_wrapper import RLLibWrapper
 from controllers.drone_control import drone_controller
+from controllers.football_control import compute_rondo_actions
 from controllers.predator_prey_control import compute_slot_actions
 from learn.marl.callbacks import CurriculumCallback, LogRawEpisodeReturn
 
-try:
-    from evals.belief.eval import load_model
-except ImportError:
-    print('Belief model loading not available, check virtual environment')
-
+from evals.belief.eval import load_model
 
 #logger = getlogger(__name__)
 
@@ -166,7 +163,7 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
 
     return _summarize_eval_rows(rows)
 
-def _collect_slot_controller_dataset(cfg: dict, episodes: int):
+def _collect_controller_dataset(cfg: dict, episodes: int):
     obs_buf = []
     act_buf = []
     ret_buf = []
@@ -183,7 +180,14 @@ def _collect_slot_controller_dataset(cfg: dict, episodes: int):
         trajectory = []
 
         for _ in range(cfg['env']['max_episode_length']):
+
             expert_actions = _compute_expert_actions(obs, env.unwrapped.obs_map, cfg)
+            if 'predator_prey' in cfg['env']['scenario']:
+                expert_actions = compute_slot_actions(obs,env.unwrapped.obs_map)
+            elif 'drone' in cfg['env']['scenario']:
+                expert_actions = drone_controller(obs, env.unwrapped.obs_map, cfg['env'].get('controller_kwargs', {})
+            elif 'football' in cfg['env']['scenario']:
+                expert_actions = compute_rondo_actions(obs,env.unwrapped.obs_map)
 
             predator_obs = {
                 agent: np.asarray(obs[agent], dtype=np.float32).copy()
@@ -311,8 +315,8 @@ def _maybe_pretrain_policy(algo, cfg: dict, logdir: str) -> bool:
             },
         )
 
-    summary = _evaluate_shared_policy(algo, cfg, runs=eval_runs)
-    print(f'Pretrain evaluation over {eval_runs} runs: {summary}')
+    #summary = _evaluate_shared_policy(algo, cfg, runs=eval_runs)
+    #print(f'Pretrain evaluation over {eval_runs} runs: {summary}')
 
     pretrain_dir = os.path.join(logdir, 'checkpoint0_pretrain')
     _save_checkpoint(algo, pretrain_dir)
@@ -341,11 +345,8 @@ def train(config_path: str, kwargs=None):
     OmegaConf.save(config=cfg, f=logdir+'/config.yaml')
 
     def logger_creator(config):
-        try:
-            from ray.tune.logger import UnifiedLogger
-            return UnifiedLogger(config, logdir, loggers=None)
-        except:
-            print('Cannot import unified logger, check ray version...')
+        from ray.tune.logger import UnifiedLogger
+        return UnifiedLogger(config, logdir, loggers=None)
 
     algo_config = make_ray_config(cfg)
 
@@ -366,7 +367,7 @@ def train(config_path: str, kwargs=None):
             algo_build.restore(initial_checkpoint)
         else:
             _maybe_pretrain_policy(algo_build, cfg, logdir)
-
+    print('Starting training...')
     #train 15,000 iterations
     total_iters = int(cfg['alg']['timesteps'])
     checkpoint_freq = int(cfg['alg'].get('checkpoint_freq', 500))
@@ -414,15 +415,17 @@ def make_ray_config(
 
         if config is not None:
             seed += ((1000*config.worker_index + config.vector_index))   
-        
+
         if cfg.get('belief_config_dir') is not None:
             belief_kwargs = {
                 'on': True,
                 'model': load_model(
                     config_dir=cfg.get('belief_config_dir'),
                     ckpt_dir=cfg.get('belief_dir'),
-                )
+                ),
+                'min_obs': cfg['min_obs'],
             }
+            time.sleep(1)
 
             env = make_marl_env(cfg,seed=int(seed),wrap=wrapper,belief_kwargs=belief_kwargs)
         else:

@@ -155,19 +155,24 @@ class ParticleCluster:
         
         self.weights = np.ones(self.num_particles) / self.num_particles
     
-    def propagate(self, dt, current_state, target, team_positions, obs_map):
+    def propagate(self, dt, current_obs, target, team_positions, obs_map):
 
         num_particles = len(self.particles)
         
         for i, particle in enumerate(self.particles):
             #convert to relative observations
-            team_positions_i = np.concatenate((team_positions,current_state[self.dim:]))
+            temp_obs = deepcopy(current_obs)
+            team_positions_i = np.concatenate((team_positions,current_obs[obs_map['self_pos']]))
             team_positions_i = team_positions_i - np.tile(particle.position,len(team_positions_i)//self.dim)
             target_i = target - np.tile(particle.position,len(target)//self.dim)
-            current_state_i = np.concatenate((current_state[:self.dim],particle.position))
-            full_obs = np.concatenate((current_state_i,target_i,team_positions_i))
+            temp_obs[obs_map['self_pos']] = particle.position
+            temp_obs[obs_map['target_pos']] = target_i
+            if not self.target:
+                temp_obs[obs_map['team']] = team_positions_i
+            else:
+                temp_obs[obs_map['target_obs']] = team_positions_i
 
-            vel_cmd = self.control_func(full_obs,obs_map)
+            vel_cmd = self.control_func(temp_obs,obs_map)
 
             particle.add_control(vel_cmd)
             particle.propagate(dt)
@@ -210,9 +215,8 @@ class ParticleCluster:
         if min(dist) > 3.0:
             self.initialize_gaussian(measurement,np.ones(measurement.shape)*measurement_std)
             return True
-        likelihoods = np.exp(-0.5 * dist**2) # / (measurement_std**2))
-        self.weights = likelihoods + 1e-300  # avoid zeros
-        #print(max(self.weights),min(self.weights),np.average(self.weights),np.std(self.weights))
+        likelihoods = np.exp(-0.5 * dist**2) 
+        self.weights = likelihoods + 1e-300  
         self.weights /= np.sum(self.weights)
         return False
 
@@ -222,73 +226,130 @@ class ParticleCluster:
         velocities = np.array([p.velocity_dir * p.speed for p in self.particles])
         return positions, velocities
 
-    def simple_pred_control(self, obs, obs_map):
-
-        prey_pos = obs[obs_map['target']][2:]
-        goal_pos = obs[obs_map['target']][:2]
-        pred_pos = obs[obs_map['team']].reshape(-1,2)
-
-        forward = goal_pos - prey_pos
-        forward = forward / (np.linalg.norm(forward) + 1e-6)
-        lateral = np.array([-forward[1], forward[0]])
-        pos = pred_pos[-1]
-
-        slots = []
-        backoff = 3.0
-        lateral_spacing = 2.0
-        num_slots = len(pred_pos)
-
-        for i in range(num_slots):
-            offset = (i - (num_slots - 1) / 2) * lateral_spacing
-            slot = prey_pos - (forward * backoff) + (lateral * offset)
-            slots.append(slot)
-
-        closest_slot = min(slots, key=lambda s: np.linalg.norm(pos - s))
-
-        #compute control for last predator
-        pos = pred_pos[-1]
-        vec = closest_slot - pos
-        dist = np.linalg.norm(vec)
-        command = vec / dist if dist > 0.1 else np.zeros(2)
-
-        return command
-
-    def simple_prey_control(self, obs,obs_map):
-        """
-        Compute prey velocity vector repelled by predators with fixed parameters.
-
-        Args:
-            prey_pos (np.ndarray): 2D position of the prey.
-            predator_positions (np.ndarray): Array of shape (N, 2) with predator positions.
-
-        Returns:
-            np.ndarray: Normalized 2D velocity vector for the prey.
-        """
-        predator_positions = obs[obs_map['team']].reshape(-1,2)
-        prey_pos = obs[obs_map['target']][2:]
-
-        prey_sensitivity = 1.2
-        prey_avoid_radius = 2.4
-        prey_avoid_gain = 1.5
-        force_exponent = 2.5
-
-        force = np.zeros(2)
-
-        for predator_pos in predator_positions:
-            diff = prey_pos - predator_pos
-            dist = np.linalg.norm(diff) + 1e-6  # avoid division by zero
-            gain = prey_sensitivity
-            if dist < prey_avoid_radius:
-                gain *= prey_avoid_gain
-            force += gain * (diff / dist ** force_exponent)
-        
-        norm = np.linalg.norm(force)
-        if norm > 0:
-            force /= norm
-
-        return force
 
 class PredatorPreyParticleFilter:
+    def __init__(
+        self, 
+        obs_map,
+        agent_start_pos: dict,  # e.g., {'agent0': [x0, y0], 'agent1': [x1, y1]}
+        prey_start_pos: list[float], 
+        agent_control_function,
+        target_control_function,
+        num_particles: int = 100,
+        std_dev: float = 0.2,
+        max_speed: float = 1.0,
+        speed_ratio: float = 0.4,
+        dt: float = 0.1
+    ):
+        self.obs_map = obs_map
+        self.n_agents = len(agent_start_pos.keys())
+        self.prey_pos = np.array(prey_start_pos, dtype=float)
+        self.clusters = {}
+        self.dim = len(prey_start_pos)
+        self.dt = dt
+        self.max_speed = max_speed
+        self.speed_ratio = speed_ratio
+        self.std_dev = std_dev
+
+        for i, (name, pos) in enumerate(agent_start_pos.items()):
+            mean_pos = np.array(pos, dtype=float)
+            cluster = ParticleCluster(
+                agent_control_function,
+                num_particles=num_particles,
+                mean_pos=mean_pos,
+                std_dev=np.ones(self.dim) * self.std_dev,
+                dim=self.dim,
+                max_speed=self.max_speed,
+                dt=dt,
+                target=False,
+            )
+            self.clusters[name] = cluster
+
+        # Initialize prey cluster
+        self.clusters['target'] = ParticleCluster(
+            target_control_function,
+            num_particles=num_particles,
+            mean_pos=self.prey_pos,
+            std_dev=np.ones(self.dim) * self.std_dev,
+            dim=self.dim,
+            max_speed=self.max_speed*self.speed_ratio,
+            dt=dt,
+            target=True,
+        )
+
+
+    def reset(
+        self,
+        team_start_pos: dict,  # e.g., {'agent0': [x0, y0], 'agent1': [x1, y1]}
+        target_start_pos: list[float], 
+    ):
+
+        # Initialize one ParticleCluster per predator
+        for i, (name, pos) in enumerate(team_start_pos.items()):
+            mean_pos = np.array(pos, dtype=float)
+            self.clusters[name].initialize_gaussian(mean_pos,np.ones(self.dim) * self.std_dev)
+
+        # Initialize target cluster
+        self.clusters['target'].initialize_gaussian(target_start_pos,np.ones(self.dim) * self.std_dev)
+
+    def propagate_all(self, current_obs):
+
+        team_positions = []
+        target_position = None
+
+        # Get estimated mean positions
+        for name in self.clusters.keys():
+            mean_pos, _ = self.clusters[name].estimate_mean_position()
+            if 'agent' in name:
+                team_positions.append(mean_pos)
+            elif name == 'target':
+                target = mean_pos
+
+        team_positions = np.array(team_positions)
+
+        # Propagate predator clusters
+        for i, name in enumerate(self.clusters.keys()):
+            if 'agent' in name:
+                self.clusters[name].propagate(self.dt, current_obs, target, np.delete(deepcopy(team_positions), i, axis=0).flatten(), self.obs_map)
+            else:
+                self.clusters[name].propagate(self.dt, current_obs, target, team_positions.flatten(), self.obs_map)
+
+    def update_observation(
+        self, 
+        agent_name: str, 
+        observed_pos: np.ndarray, 
+        measurement_std: float = 0.1
+    ):
+
+        if agent_name not in self.clusters:
+            raise ValueError(f"Agent name '{agent_name}' not found in clusters.")
+
+        force_reset = self.clusters[agent_name].update_weights(observed_pos, measurement_std)
+        if not force_reset:
+            self.clusters[agent_name].resample()
+
+    def get_observation(
+        self,
+    ):
+        obs = {}
+        for name,cluster in self.clusters.items():
+            obs[name] = {}
+            pos, confidence = cluster.estimate_mean_position()
+            obs[name]['pos'] = pos
+            obs[name]['confidence'] = confidence
+
+        return obs
+
+    def get_positions_and_velocities(self):
+
+        state_dict = {}
+        for name, cluster in self.clusters.items():
+            positions, velocities = cluster.get_state()
+            state_dict[name] = (positions, velocities)
+        return state_dict
+
+    
+class FootballParticleFilter:
     def __init__(
         self, 
         obs_map,
@@ -353,7 +414,7 @@ class PredatorPreyParticleFilter:
         # Initialize prey cluster
         self.clusters['target'].initialize_gaussian(prey_start_pos,np.ones(self.dim) * self.std_dev)
 
-    def propagate_all(self, current_state, goal):
+    def propagate_all(self, current_obs): #, goal):
 
         team_positions = []
         target_position = None
@@ -364,16 +425,16 @@ class PredatorPreyParticleFilter:
             if 'agent' in name:
                 team_positions.append(mean_pos)
             elif name == 'target':
-                target = np.concatenate((goal,mean_pos))
+                target = mean_pos #current np.concatenate((goal,mean_pos))
 
         team_positions = np.array(team_positions)
 
         # Propagate predator clusters
         for i, name in enumerate(self.clusters.keys()):
             if 'agent' in name:
-                self.clusters[name].propagate(self.dt, current_state, target, np.delete(deepcopy(team_positions), i, axis=0).flatten(), self.obs_map)
+                self.clusters[name].propagate(self.dt, current_obs, target, np.delete(deepcopy(team_positions), i, axis=0).flatten(), self.obs_map)
             else:
-                self.clusters[name].propagate(self.dt, current_state, target, team_positions.flatten(), self.obs_map)
+                self.clusters[name].propagate(self.dt, current_obs, target, team_positions.flatten(), self.obs_map)
 
     def update_observation(
         self, 
@@ -408,5 +469,3 @@ class PredatorPreyParticleFilter:
             positions, velocities = cluster.get_state()
             state_dict[name] = (positions, velocities)
         return state_dict
-
-    

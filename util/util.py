@@ -3,6 +3,7 @@ import cv2
 import yaml
 import shutil
 import imageio
+import numpy as np
 
 def mkdir(folder):
     if os.path.exists(folder):
@@ -57,4 +58,40 @@ def save_cv2_images_as_gif(images, output_path, fps=10):
     duration = 1 / fps
 
     imageio.mimsave(output_path, rgb_frames, duration=duration)
+
+def furthest_point(xy, vw, x0y0, d):
+    '''
+    solves for the furthest point from x,y traveling in direction v,w 
+    from x0, y0 that is no more than distance d
+    '''
+
+    x = xy[0]
+    y = xy[1]
+    v = vw[0]
+    w = vw[1]
+    x0 = x0y0[0]
+    y0 = x0y0[1]
+
+    a = v**2 + w**2
+    if a == 0:
+        return np.array([x, y])
+
+    b = 2 * ((x - x0) * v + (y - y0) * w)
+    cq = (x - x0)**2 + (y - y0)**2 - d**2
+
+    disc = b**2 - 4 * a * cq
+
+    if disc < 0:
+        return np.array([x,y])
+
+    t1 = (-b - np.sqrt(disc)) / (2 * a)
+    t2 = (-b + np.sqrt(disc)) / (2 * a)
+
+    t_max = max(t1, t2)
+
+    if t_max < 0:
+        # Direction points away from feasible circle
+        t_max = 0
+
+    return np.array([x + t_max * v, y + t_max * w])
 

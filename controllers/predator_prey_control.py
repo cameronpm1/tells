@@ -97,21 +97,27 @@ def compute_slot_actions(
         ]
 
     assigned_slots = _assign_slots(predators, slots)
+    assigned_slots_dict = {}
 
     if isinstance(obs,dict):
         actions = {}
         for i, name in enumerate(agent_names):
             actions[name] = vec_to_action(assigned_slots[i] - obs[name][obs_map['self_pos']])
+            assigned_slots_dict[name] = assigned_slots[i]
     else:
         actions = vec_to_action(assigned_slots[-1] - obs[obs_map['self_pos']])
+        assigned_slots_dict['self'] = assigned_slots[-1]
 
-    return actions
+    return actions, assigned_slots_dict
 
 def adversary_controller(
     obs: list[float],
     obs_map: dict,
     controller_cfg: dict
 ):
+    '''
+    assumes recieves obs['target'] from full state obs
+    '''
 
     force = np.zeros(2)
 

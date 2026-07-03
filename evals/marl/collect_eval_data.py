@@ -117,9 +117,10 @@ def data_worker(
     env = make_marl_env(
         cfg,
         seed=cfg['seed'],
-        wrap=True,
+        wrap='rllib',
         eval=True
     )
+    obs_map = env.env.obs_map
 
     if checkpoint_dir is not None:
         checkpoint_dir = os.path.abspath(checkpoint_dir)
@@ -138,16 +139,18 @@ def data_worker(
         save_dir = os.path.join(master_dir,str(n+dir_offset))
         mkdir(save_dir)
 
+        episode_agent = np.random.choice(cfg['env']['learned_agent_list'])
+        target_obs = {}
+        target_obs[episode_agent] = []
+
         obs, _ = env.reset()
+        pos = obs[episode_agent][obs_map['target_goal']]
         done = {"__all__": False}
         step = 0
-        target_obs = {}
         obs_history = []
-
-        episode_agent = np.random.choice(cfg['env']['learned_agent_list'])
+        obs_history.append(obs)
 
         #for agent_name in cfg['env']['learned_agent_list']:
-        target_obs[episode_agent] = []
 
         while not done["__all__"]:
 
@@ -162,40 +165,15 @@ def data_worker(
                 actions[agent_id] = action
             step += 1
 
-            obs_history.append(obs[episode_agent][8:12])
             obs, rewards, terminations, truncations, infos = env.step(actions)
+            obs_history.append(obs)
 
             done = {
                 "__all__": terminations["__all__"] or truncations["__all__"]
             }
 
-            #for agent_name in cfg['env']['learned_agent_list']:
-                #ASSUMES TARGET POS DOESNT CHANGE
-            if cfg['env']['scenario'] == 'predator_prey':
-                target_obs[episode_agent].append(np.concatenate([obs[episode_agent][4:6], obs[episode_agent][6:8]]))
-
-            ts_target_obs = []
-            for i in range(min_obs):
-                idx = min_obs - i
-                if idx >= len(target_obs[episode_agent]):
-                    ts_target_obs.append(target_obs[episode_agent][-1])
-                else:
-                    ts_target_obs.append(target_obs[episode_agent][-idx])
-            ts_target_obs = np.array(ts_target_obs).flatten()
-
-            if step == 1:
-                team_obs = obs_history[-1]
-            else:
-                team_obs = obs_history[-2] + np.random.uniform(-1.0,1.0,size=obs_history[-2].shape)
-
-            full_obs = {}
-            #for agent_name in cfg['env']['learned_agent_list']:
-            full_obs[episode_agent] = {}
-            full_obs[episode_agent]['target_true'] = np.concatenate((team_obs,ts_target_obs))
-            full_obs[episode_agent]['team_true'] = np.concatenate((obs_history[-1],obs[episode_agent][8:12]))
+            data_point, _ = env.obs_packaging_func(obs_history, obs_map, [episode_agent], min_obs=min_obs)
             save_path = os.path.join(save_dir,'step_'+str(step)+'_'+episode_agent+'.npz')
-            np.savez(save_path,**full_obs[episode_agent])
+            np.savez(save_path,**data_point[episode_agent])
 
-        obs, _ = env.reset()
-    
 
