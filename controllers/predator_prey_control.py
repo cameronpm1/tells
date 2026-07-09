@@ -108,7 +108,7 @@ def compute_slot_actions(
         actions = vec_to_action(assigned_slots[-1] - obs[obs_map['self_pos']])
         assigned_slots_dict['self'] = assigned_slots[-1]
 
-    return actions, assigned_slots_dict
+    return actions
 
 def adversary_controller(
     obs: list[float],

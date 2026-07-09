@@ -2,6 +2,7 @@ import os
 import ray
 import torch
 import numpy as np
+from typing import Optional
 
 from ray.rllib.policy.policy import Policy
 from ray.tune.registry import register_env
@@ -26,6 +27,7 @@ def eval(
         belief_dir: str = None,
         belief_config_dir: str = None,
         save_videos: bool = True,
+        collect_results: bool = False,
     ):
 
     '''
@@ -72,8 +74,16 @@ def eval(
         print('No model directory provided...')
         exit()
 
-    save_dir = os.path.join(checkpoint_dir,'videos')
-    mkdir(save_dir)
+    if save_videos:
+        video_save_dir = os.path.join(checkpoint_dir,'videos')
+        mkdir(video_save_dir)
+    else: 
+        video_save_dir = ''
+
+    if collect_results:
+        results_save_dir = os.path.join(checkpoint_dir,'results')
+    else:
+        results_save_dir = None
 
     summaries = []
     for i in range(n_runs):
@@ -94,9 +104,10 @@ def eval(
                 env=env,
                 cfg=cfg,
                 algo=algo,
-                save_dir=save_dir,
+                save_dir=video_save_dir,
                 idx=i,
                 save_video=save_videos,
+                results_save_dir=results_save_dir,
             )
         )
 
@@ -118,6 +129,7 @@ def eval_single_episode(
         save_dir:str = '',
         idx:int=0,
         save_video: bool = True,
+        results_save_dir: Optional[str] = None
     ):
     '''
     test sim for single episode
@@ -158,6 +170,9 @@ def eval_single_episode(
     policy_list = cfg['policy_list']
     policy_mapping_fn = marl_policy_mapping_fn
 
+    if results_save_dir is not None:
+        results = {}
+
     while not done["__all__"]:
 
         actions = {}
@@ -194,10 +209,17 @@ def eval_single_episode(
         if save_video:
             images.append(env.render_rgb())
 
+        if results_save_dir is not None:
+            results[step_count] = [obs, rewards, terminations, truncations, infos]
+
     if save_video:
         save_file = str(os.path.join(save_dir,str(idx)+'.gif'))
         print('generating video in ' + save_file)
         save_rgb_gif(images,save_file)
+
+    if results_save_dir is not None:
+        save_path = str(os.path.join(save_dir,str(idx)+'.npz'))
+        np.savez(save_path,**results)
 
     print("\n==== EVAL RESULTS ====")
     print(f"Reward: {episode_rewards[-1]}")

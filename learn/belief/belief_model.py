@@ -237,25 +237,46 @@ class BeliefModel(pl.LightningModule):
         #self.model = NN2CNN(self.hparams.input_channels,self.hparams.output_channels)
         if self.hparams.model_name == 'predator_prey_NN':
             self.model = predator_prey_NN(self.hparams.input_channels,self.hparams.output_channels)
-        self.loss_func = PermutationInvariantMSE() #torch.nn.MSELoss()
-        self.val_loss_func = PermutationInvariantMSE()
+            self.loss_func = self.model.loss
+            self.val_loss_func = self.model.val_loss
+            self.vae = False
+        if self.hparams.model_name == 'predator_prey_VAE_NN':
+            self.model = predator_prey_VAE_NN(self.hparams.input_channels,self.hparams.output_channels)
+            self.loss_func = self.model.loss #torch.nn.MSELoss()
+            self.val_loss_func = self.model.val_loss
+            self.vae = True
+        
 
     def train_forward(self, x):
-        output = self.model(x)
-        return output
+        if self.vae:
+            output, mu, logvar = self.model(x)
+            return output, mu, logvar
+        else:
+            output = self.model(x)
+            return output 
 
     def training_step(self, batch, batch_idx):
         data, target, filepath = batch
-        output = self.train_forward(data)
+        if self.vae:
+            output, mu, logvar = self.model(data)
+            train_loss, kl = self.loss_func(output,target,mu,logvar)
+        else:
+            output = self.model(data)
+            train_loss = self.loss_func(output, target)
 
-        train_loss = self.loss_func(output,target)
         self.log('train_loss', train_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        if self.vae:
+            self.log('train_kl_loss', kl, on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
         return train_loss
 
     def validation_step(self, batch, batch_idx):
         data, target, filepath = batch
-        output = self.train_forward(data)
+
+        if self.vae:
+            output, mu, logvar = self.model(data)
+        else:
+            output = self.model(data)
 
         val_loss = self.val_loss_func(output,target)
         self.log('val_loss', val_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
@@ -268,7 +289,8 @@ class BeliefModel(pl.LightningModule):
 
         error = 0
 
-        output = self.model(data)
+        output, mu, logvar = self.train_forward(data)
+
         #avg_error = np.sum(np.linalg.norm(output.detach().cpu().numpy() - target.squeeze().detach().cpu().numpy(),axis=1))/len(data)
         avg_error = self.val_loss_func.error(output.detach().cpu().numpy(), target.squeeze().detach().cpu().numpy()) / len(data)
         test_loss = self.val_loss_func(output,target.squeeze())

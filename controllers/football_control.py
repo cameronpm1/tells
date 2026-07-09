@@ -90,7 +90,7 @@ def compute_rondo_actions(
         target_rel = agent_obs[obs_map['target_pos']]
 
         action = None
-
+        #print(ball_owner,agent_obs[obs_map['ball_owner']])
         if ball_owner == i: #int(agent_obs[obs_map['target_ball']][-1]) or target_aim_idx == i:
             #agent has ball or target is moving towards this player, try to optimize space
             team_angles_from_target = [abs(np.arctan2(np.cross(target_rel,team_i_rel),np.dot(target_rel,team_i_rel))) for team_i_rel in team_rel]
@@ -99,7 +99,8 @@ def compute_rondo_actions(
             angle_to_goal = abs(np.arctan2(np.cross(vel,desired_vec),np.dot(vel,desired_vec)))
 
             if angle_to_goal < goal_point_angle_proximity and np.linalg.norm(vel) > 0.001:
-                action = 9
+                action = 9 #pass
+                #print('!!!!!!!!!!!!')
         elif (i - ball_owner) % 5 in (1, 5 - 1):
             #agent is neighboring an agent with the ball and should expand the circle
             desired_point = anchor * expand_ratio #expand the circle

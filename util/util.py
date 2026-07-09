@@ -35,7 +35,7 @@ def save_rgb_gif(images, output_path, fps=10):
     duration = 1 / fps  # seconds per frame
     imageio.mimsave(output_path, images, duration=duration)
 
-def save_cv2_images_as_gif(images, output_path, fps=10):
+def save_cv2_images_as_gif(images, output_path, fps=60):
     """
     images: list of cv2 images (BGR numpy arrays)
     output_path: path to save the gif (e.g., "output.gif")

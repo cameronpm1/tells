@@ -25,21 +25,24 @@ For ActionType.VEL, actions are 4D:
 import numpy as np
 import pybullet as p
 from copy import deepcopy
+from typing import Optional
 from gymnasium import spaces
 
+from controllers.drone_control import drone_controller
 from gym_pybullet_drones.envs.BaseRLAviary import BaseRLAviary
 from gym_pybullet_drones.utils.enums import DroneModel, Physics, ActionType, ObservationType
 
 
-class PredatorPreyAviary(BaseRLAviary):
+class CaravanAviary(BaseRLAviary):
     def __init__(
         self,
         agent_list: list[str],
         learned_agent_list: list[str],
+        reward_kwargs: dict,
         max_episode_length: int = 200,
         grid_size: float = 20.0,
-        goal_pos: np.ndarray | None = None,
-        goal_line_center: np.ndarray | None = None,
+        goal_pos: Optional[np.ndarray] = None,
+        goal_line_center: Optional[np.ndarray] = None,
         num_goal_boxes: int = 5,
         num_protectors: int = 3,
         goal_box_spacing: float = 1.0,
@@ -51,7 +54,7 @@ class PredatorPreyAviary(BaseRLAviary):
         speed_ratio: float = 0.4,
         protection_radius: float = 1.1,
         target_spawn_distance: float = 5.0,
-        controller_kwargs: dict = None,
+        controller_kwargs: Optional[dict] = None,
         drone_model: DroneModel = DroneModel.CF2X,
         neighbourhood_radius: float = np.inf,
         initial_xyzs=None,
@@ -66,6 +69,7 @@ class PredatorPreyAviary(BaseRLAviary):
     ):
         self.full_agent_list = agent_list
         self.agents = learned_agent_list
+        self.reward_cfg = reward_kwargs
         self.n_agents = len(self.agents)
         self.target_idx = len(self.agents)
         self.grid_size = grid_size
@@ -82,15 +86,7 @@ class PredatorPreyAviary(BaseRLAviary):
         self.intrusion_radius = float(intrusion_radius)
         self.adversary_replan_steps = int(adversary_replan_steps)
 
-        self.controller_cfg = {
-            'adversary_repulsion_radius': 0.75,
-            'adversary_repulsion_gain': 1.0,
-            'adversary_attraction_gain': 1.0,
-            'adversary_replan_steps': 10,
-            'protection_radius': self.protection_radius,
-        }
-        if controller_kwargs is not None:
-            self.controller_cfg.update(controller_kwargs)
+        self.controller_cfg = controller_kwargs
 
         if goal_line_center is None:
             if goal_pos is None:
@@ -141,6 +137,9 @@ class PredatorPreyAviary(BaseRLAviary):
             'target': slice(target_start, target_stop),
             'team': slice(target_stop, team_stop),
             'target_obs': slice(target_stop, target_obs_stop),
+            'self_pos': slice(3, 6),
+            'target_pos': slice(target_start + 3 * self.num_goal_boxes, target_start + 3 * self.num_goal_boxes + 3),
+            'target_goal': slice(target_start, target_start + 3 * self.num_goal_boxes)
         }
         self.goal_rel = True
 
@@ -170,7 +169,7 @@ class PredatorPreyAviary(BaseRLAviary):
         The default velocity is zero. Future experiments can assign nonzero
         velocities to self.box_state[:, 3:6] and the points will propagate.
         """
-        center_offset = 0.5 * (self.num_goal_boxes * self.goal_box_half_extents[0] * 2 + self.goal_box_spacing * (self.num_goal_boxes - 1))
+        center_offset = 0.5 * (self.num_goal_boxes * self.goal_box_half_extents[0] * 2 + self.goal_box_spacing * (self.num_goal_boxes - 1)) - 0.5
         
         for k in range(self.num_goal_boxes):
             x = self.goal_line_center_xy[0] + (k*(self.goal_box_half_extents[0]*2+self.goal_box_spacing) - center_offset)
@@ -178,6 +177,7 @@ class PredatorPreyAviary(BaseRLAviary):
             z = self.base_altitude
             self.box_state[k, 0:3] = np.array([x, y, z], dtype=np.float32)
             self.box_state[k, 3:6] = 0.0
+
 
     def _propagate_box_points(self, dt: float):
         """
@@ -321,7 +321,7 @@ class PredatorPreyAviary(BaseRLAviary):
         obs, infos = super().reset(seed=seed, options=options)
         self.obs = obs
 
-        return deepcopy(obs), {}
+        return deepcopy(obs), {'__common__':{}}
 
     def step(self, action_dict):
         self._step += 1
@@ -342,24 +342,37 @@ class PredatorPreyAviary(BaseRLAviary):
         full_action[self.target_idx, :] = self._scripted_target_action()
 
         self._policy_step_counter += 1
+        self.behavior_cloning_reward(action_dict)
 
-        obs, rewards, terminations, truncations, infos = super().step(full_action)
+        for i in range(10):
+            obs, rewards, terminations, truncations, infos = super().step(full_action)
         self.obs = obs
 
-        return deepcopy(obs), rewards, terminations, truncations, infos
+        return deepcopy(obs), rewards, terminations, truncations, {'__common__':{}}
 
-    def _scripted_target_action(self):
+    def _scripted_target_action(
+            self,
+            obs: Optional[dict] = None,
+        ):
         """
         Compute the adversary action from the compact team state and box state.
         """
         replan = self._policy_step_counter % self.controller_cfg['adversary_replan_steps'] == 0
 
-        action, target_box_idx = self._compute_adversary_action_from_state(
-            obs=self.obs['target'],
-            obs_map=self.obs_map,
-            current_target_box_idx=self.current_target_box_idx,
-            replan=replan,
-        )
+        if obs is None:
+            action, target_box_idx = self._compute_adversary_action_from_state(
+                obs=self.obs['target'],
+                obs_map=self.obs_map,
+                current_target_box_idx=self.current_target_box_idx,
+                replan=replan,
+            )
+        else:
+            action, target_box_idx = self._compute_adversary_action_from_state(
+                obs=obs,
+                obs_map=self.obs_map,
+                current_target_box_idx=self.current_target_box_idx,
+                replan=replan,
+            )
 
         self.current_target_box_idx = int(target_box_idx)
 
@@ -372,7 +385,7 @@ class PredatorPreyAviary(BaseRLAviary):
         current_target_box_idx: int,
         replan: bool = True,
     ):
-        adversary_pos = obs[obs_map['self']][3:]
+        adversary_pos = obs[obs_map['self_pos']]
         team_pos = (obs[obs_map['target_obs']] + np.tile(adversary_pos, self.n_agents)).reshape(-1,3)
         box_pos = (obs[obs_map['target']][:-3] + np.tile(adversary_pos, int(len(obs[obs_map['target']])/3 - 1))).reshape(-1,3)
 
@@ -382,19 +395,17 @@ class PredatorPreyAviary(BaseRLAviary):
         attraction_gain = self.controller_cfg['adversary_attraction_gain']
 
         selected_target_box_idx = int(current_target_box_idx)
-
-        if replan or not (0 <= selected_target_box_idx < self.num_goal_boxes):
-            dists = np.linalg.norm(
-                box_pos[:, None, 0:3] - team_pos[None, :, 0:3],
-                axis=2,
-            )
-
-            hovered = np.any((dists <= protection_radius), axis=1)
-            unhovered_indices = np.where(~hovered)[0]
-
-            if len(unhovered_indices) > 0:
-                dists_to_adversary = np.linalg.norm(box_pos[unhovered_indices, 0:3] - adversary_pos[0:3],axis=1)
-                selected_target_box_idx = int(unhovered_indices[np.argmin(dists_to_adversary)])
+        protected_boxes = self._compute_protected_boxes()
+    
+        if replan or not (0 <= selected_target_box_idx < self.num_goal_boxes) or protected_boxes[selected_target_box_idx] == 1:
+            dists = np.linalg.norm(box_pos[:, None, 0:3] - team_pos[None, :, 0:3],axis=2,)
+            #hovered = np.any((dists <= protection_radius), axis=1)
+            #unhovered_indices = np.where(~hovered)[0]
+            #if len(unhovered_indices) > 0:
+            #    dists_to_adversary = np.linalg.norm(box_pos[unhovered_indices, 0:3] - adversary_pos[0:3],axis=1)
+            #    selected_target_box_idx = int(unhovered_indices[np.argmin(dists_to_adversary)])
+            row_maxes = np.min(dists, axis=1)
+            selected_target_box_idx = int(np.argmax(row_maxes)) #least protected box
 
         target_pos = box_pos[selected_target_box_idx]
         force = np.zeros(3, dtype=np.float32)
@@ -419,6 +430,29 @@ class PredatorPreyAviary(BaseRLAviary):
             action = np.concatenate([direction, np.array([speed])])
 
         return action, selected_target_box_idx
+
+    def behavior_cloning_reward(self, action_dict: dict) -> dict:
+        controller_actions = drone_controller(deepcopy(self.obs), self.obs_map, self.controller_cfg)
+        action_matches = []
+
+        for agent in self.agents:
+            if agent not in action_dict or agent not in controller_actions:
+                continue
+
+            learned_action = int(action_dict[agent])
+            action_matches.append(float(learned_action == controller_actions[agent]))
+
+        if len(action_matches) == 0:
+            controller_action_match = 0.0
+        else:
+            controller_action_match = float(np.mean(action_matches))
+        controller_action_error = 1.0 - controller_action_match
+
+        self.controller_metrics = {
+            'controller_action_error': controller_action_error,
+            'controller_action_match': controller_action_match,
+            'controller_action_reward': controller_action_match,
+        }
     
     def _computeReward(self):
         """
@@ -430,11 +464,17 @@ class PredatorPreyAviary(BaseRLAviary):
         Negative component:
             penalty if the adversary breaches any box point.
         """
+        reward = 0
+
+        reward += self.reward_cfg['step_reward']
+
         protected = self._compute_protected_boxes()
-        reward = float(np.mean(protected))
+        reward = np.sum(protected) * self.reward_cfg.get('protected_scale', 1)
+
+        reward += self.controller_metrics['controller_action_reward'] * self.reward_cfg['bc_scale']
 
         if self._breached_box():
-            reward -= 1.0
+            reward -= self.reward_cfg.get('intruded_penalty', 1000)
 
         reward_dict = {}
         for agent in self.agents:
@@ -483,7 +523,7 @@ class PredatorPreyAviary(BaseRLAviary):
                 horizontal_dist = np.linalg.norm(pos - point)
 
                 if horizontal_dist <= self.protection_radius:
-                    protected[goal_idx] = True
+                    protected[goal_idx] = 1
                     break
 
         return protected
@@ -525,8 +565,8 @@ class PredatorPreyAviary(BaseRLAviary):
         spawn_radius = 1.0
         xyzs = np.zeros((self.n_agents + 1, 3), dtype=np.float32)
 
-        min_goal_x = float(np.min(self.box_state[:, 0]))
-        max_goal_x = float(np.max(self.box_state[:, 0]))
+        min_goal_x = float(np.min(self.box_state[:, 0])) + 1.0
+        max_goal_x = float(np.max(self.box_state[:, 0])) - 1.0
         min_goal_y = float(np.min(self.box_state[:, 1]))
         max_goal_y = float(np.max(self.box_state[:, 1]))
         target_x = rng.uniform(min_goal_x, max_goal_x)
@@ -588,7 +628,14 @@ class PredatorPreyAviary(BaseRLAviary):
     def set_difficulty(self, difficulty):
         self.difficulty = float(difficulty)
 
-    def render_rgb(
+    def close(self):
+        """Immediately terminate the PyBullet drone environment."""
+        try:
+            self.close()
+        except Exception:
+            pass
+
+    def render_pybullet_rgb(
         self,
         width: int = 640,
         height: int = 480,
@@ -638,3 +685,218 @@ class PredatorPreyAviary(BaseRLAviary):
         rgb = rgba[:, :, :3].astype(np.uint8)
 
         return rgb
+
+    def render_rgb(self):
+        """
+        Custom 2D top-down RGB renderer.
+
+        Shows:
+            - the goal boxes
+            - protector drones as blue quadrotor symbols
+            - target/adversary drone as a red quadrotor symbol
+            - altitude by slight drone size changes
+
+        Returns
+        -------
+        img : np.ndarray
+            RGB image with shape (H, W, 3), dtype uint8.
+        """
+        import numpy as np
+
+        width = int(getattr(self, "render_width", 700))
+        height = int(getattr(self, "render_height", 700))
+
+        img = np.full((height, width, 3), 245, dtype=np.uint8)
+
+        team_state = self._get_team_state()
+        drone_pos = team_state[:, 0:3]
+        box_pos = self.box_state[: self.num_goal_boxes, 0:3]
+
+        hx, hy, _ = self.goal_box_half_extents
+
+        # ------------------------------------------------------------
+        # Dynamic square view around boxes and drones
+        # ------------------------------------------------------------
+        all_x = np.concatenate([
+            drone_pos[:, 0],
+            box_pos[:, 0] - hx,
+            box_pos[:, 0] + hx,
+        ])
+        all_y = np.concatenate([
+            drone_pos[:, 1],
+            box_pos[:, 1] - hy,
+            box_pos[:, 1] + hy,
+        ])
+
+        pad = max(2.0, float(self.target_spawn_distance) * 0.25)
+        xmin, xmax = float(np.min(all_x) - pad), float(np.max(all_x) + pad)
+        ymin, ymax = float(np.min(all_y) - pad), float(np.max(all_y) + pad)
+
+        # Keep aspect ratio square so distances do not visually distort.
+        xmid = 0.5 * (xmin + xmax)
+        ymid = 0.5 * (ymin + ymax)
+        span = max(xmax - xmin, ymax - ymin, 1e-6)
+        xmin, xmax = xmid - span / 2.0, xmid + span / 2.0
+        ymin, ymax = ymid - span / 2.0, ymid + span / 2.0
+
+        def world_to_pixel(x, y):
+            px = int((x - xmin) / (xmax - xmin) * (width - 1))
+            py = int((ymax - y) / (ymax - ymin) * (height - 1))
+            return px, py
+
+        def draw_filled_circle(cx, cy, r, color):
+            x0, x1 = max(0, cx - r), min(width - 1, cx + r)
+            y0, y1 = max(0, cy - r), min(height - 1, cy + r)
+
+            if x1 < x0 or y1 < y0:
+                return
+
+            yy, xx = np.ogrid[y0:y1 + 1, x0:x1 + 1]
+            mask = (xx - cx) ** 2 + (yy - cy) ** 2 <= r ** 2
+            img[y0:y1 + 1, x0:x1 + 1][mask] = color
+
+        def draw_circle_outline(cx, cy, r, color, thickness=2):
+            x0, x1 = max(0, cx - r), min(width - 1, cx + r)
+            y0, y1 = max(0, cy - r), min(height - 1, cy + r)
+
+            if x1 < x0 or y1 < y0:
+                return
+
+            yy, xx = np.ogrid[y0:y1 + 1, x0:x1 + 1]
+            dist2 = (xx - cx) ** 2 + (yy - cy) ** 2
+            mask = (dist2 <= r ** 2) & (dist2 >= (r - thickness) ** 2)
+            img[y0:y1 + 1, x0:x1 + 1][mask] = color
+
+        def draw_line(x0, y0, x1, y1, color, thickness=1):
+            x0, y0, x1, y1 = int(x0), int(y0), int(x1), int(y1)
+
+            dx = abs(x1 - x0)
+            dy = -abs(y1 - y0)
+            sx = 1 if x0 < x1 else -1
+            sy = 1 if y0 < y1 else -1
+            err = dx + dy
+
+            x, y = x0, y0
+
+            while True:
+                draw_filled_circle(x, y, thickness, color)
+
+                if x == x1 and y == y1:
+                    break
+
+                e2 = 2 * err
+                if e2 >= dy:
+                    err += dy
+                    x += sx
+                if e2 <= dx:
+                    err += dx
+                    y += sy
+
+        def draw_rectangle(x0, y0, x1, y1, fill, outline, thickness=2):
+            left, right = sorted([x0, x1])
+            top, bottom = sorted([y0, y1])
+
+            left = max(0, min(width - 1, left))
+            right = max(0, min(width - 1, right))
+            top = max(0, min(height - 1, top))
+            bottom = max(0, min(height - 1, bottom))
+
+            img[top:bottom + 1, left:right + 1] = fill
+
+            for t in range(thickness):
+                if top + t <= bottom - t and left + t <= right - t:
+                    img[top + t, left:right + 1] = outline
+                    img[bottom - t, left:right + 1] = outline
+                    img[top:bottom + 1, left + t] = outline
+                    img[top:bottom + 1, right - t] = outline
+
+        def draw_drone(cx, cy, radius, color):
+            black = np.array([20, 20, 20], dtype=np.uint8)
+
+            arm = max(8, int(radius * 2.5))
+            rotor_r = max(3, int(radius * 0.65))
+            line_thick = max(1, radius // 4)
+
+            # Arm outlines
+            draw_line(cx - arm, cy, cx + arm, cy, black, line_thick + 1)
+            draw_line(cx, cy - arm, cx, cy + arm, black, line_thick + 1)
+
+            # Arms
+            draw_line(cx - arm, cy, cx + arm, cy, color, line_thick)
+            draw_line(cx, cy - arm, cx, cy + arm, color, line_thick)
+
+            # Rotors
+            rotor_centers = [
+                (cx - arm, cy),
+                (cx + arm, cy),
+                (cx, cy - arm),
+                (cx, cy + arm),
+            ]
+
+            for rx, ry in rotor_centers:
+                draw_circle_outline(rx, ry, rotor_r + 1, black, thickness=2)
+                draw_circle_outline(rx, ry, rotor_r, color, thickness=2)
+
+            # Body
+            draw_filled_circle(cx, cy, radius + 1, black)
+            draw_filled_circle(cx, cy, radius, color)
+
+        # ------------------------------------------------------------
+        # Background grid
+        # ------------------------------------------------------------
+        grid_color = np.array([225, 225, 225], dtype=np.uint8)
+        for x in np.linspace(xmin, xmax, 9):
+            px, _ = world_to_pixel(x, ymin)
+            img[:, max(0, min(width - 1, px))] = grid_color
+
+        for y in np.linspace(ymin, ymax, 9):
+            _, py = world_to_pixel(xmin, y)
+            img[max(0, min(height - 1, py)), :] = grid_color
+
+        # ------------------------------------------------------------
+        # Draw goal boxes
+        # ------------------------------------------------------------
+        for goal_idx, point in enumerate(box_pos):
+            x, y = float(point[0]), float(point[1])
+
+            p0 = world_to_pixel(x - hx, y - hy)
+            p1 = world_to_pixel(x + hx, y + hy)
+
+            fill = np.array([170, 225, 170], dtype=np.uint8)
+            outline = np.array([40, 120, 40], dtype=np.uint8)
+
+            # Optional: highlight the box the target is currently pursuing.
+            if goal_idx == getattr(self, "current_target_box_idx", -1):
+                outline = np.array([190, 60, 30], dtype=np.uint8)
+
+            draw_rectangle(
+                p0[0], p0[1],
+                p1[0], p1[1],
+                fill=fill,
+                outline=outline,
+                thickness=3,
+            )
+
+        # ------------------------------------------------------------
+        # Draw drones
+        # ------------------------------------------------------------
+        base_altitude = max(float(getattr(self, "base_altitude", 0.5)), 1e-6)
+
+        for i, pos in enumerate(drone_pos):
+            x, y, z = float(pos[0]), float(pos[1]), float(pos[2])
+            px, py = world_to_pixel(x, y)
+
+            # Higher altitude appears slightly smaller.
+            altitude_scale = 1.0 - 0.18 * ((z - base_altitude) / base_altitude)
+            altitude_scale = float(np.clip(altitude_scale, 0.65, 1.25))
+
+            radius = max(5, int(9 * altitude_scale))
+
+            if i == self.target_idx:
+                color = np.array([220, 35, 35], dtype=np.uint8)
+            else:
+                color = np.array([35, 90, 220], dtype=np.uint8)
+
+            draw_drone(px, py, radius, color)
+
+        return img

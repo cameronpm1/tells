@@ -107,7 +107,8 @@ class PredatorPreyEnv(gymnasium.Env):
         terminations["__all__"] = all(terminations.values())
         truncations["__all__"] = all(truncations.values())
 
-        info = {
+        info = {}
+        info['__common__'] = {
             agent: {
                 'team_reward': team_reward,
                 **metrics,
@@ -134,7 +135,7 @@ class PredatorPreyEnv(gymnasium.Env):
         self.last_metrics = metrics
 
         
-        return deepcopy(self.obs), {a: {} for a in self.agents}
+        return deepcopy(self.obs), {'__common__':{a: {} for a in self.agents}}
 
     def get_obs(self):
         return self.obs
@@ -297,7 +298,7 @@ class PredatorPreyEnv(gymnasium.Env):
         team_reward = 0
 
         team_reward = (
-            + (self.reward_cfg['slot_scale'] * metrics['controller_action_reward'])
+            + (self.reward_cfg['bc_scale'] * metrics['controller_action_reward'])
             + (self.reward_cfg['coverage_scale'] * metrics['coverage_score'])
             - (self.reward_cfg['touch_penalty_scale'] * metrics['touch_penalty'])
             - self.reward_cfg['step_cost']
@@ -441,6 +442,7 @@ class PredatorPreyScenario(BaseScenario):
         self.goal_spawn_min_radius = goal_spawn_min_radius
         self.goal_spawn_max_radius = goal_spawn_max_radius
         self.local_observations = False
+        self.noise = {}
 
     def make_world(self):
 
@@ -637,7 +639,8 @@ class PredatorPreyScenario(BaseScenario):
             else:
                 rel_positions.append(other.state.p_pos - pos)
 
-        obs['team'] = np.array(rel_positions).flatten() + np.random.normal(0, 0.3, size=(len(rel_positions)*2,))
+        self.noise[agent.name] = np.random.normal(0, 0.7, size=(len(rel_positions)*2,))
+        obs['team'] = np.array(rel_positions).flatten()
         
         
         predator_names = [name for name in self.agents if 'agent' in name]

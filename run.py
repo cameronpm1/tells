@@ -115,8 +115,9 @@ if __name__ == "__main__":
     parser.add_argument('--save_dir', type=str, default=None, help='Directory to save evaluation data to')
     parser.add_argument('--n_workers', type=int, default=1, help='Number of parallel workers to use for data collection')
     parser.add_argument('--no_eval_videos', action='store_true', help='Skip GIF rendering during MARL eval.')
+    parser.add_argument('--no_collect_results', dest='collect_results', action='store_false', help='Do not store info from eval runs in a results folder.')
     add_runtime_args(parser)
-    args = parser.parse_args()
+    args = parser.parse_args() 
 
     if args.config is None:
         print('ERROR: No config file provided')
@@ -152,6 +153,7 @@ if __name__ == "__main__":
             args.belief_dir,
             args.belief_config,
             save_videos=not args.no_eval_videos,
+            collect_results=args.collect_results
         )
 
     elif args.command == 'marl_train_belief':

@@ -143,12 +143,12 @@ def data_worker(
         target_obs = {}
         target_obs[episode_agent] = []
 
-        obs, _ = env.reset()
+        obs, infos = env.reset()
         pos = obs[episode_agent][obs_map['target_goal']]
         done = {"__all__": False}
         step = 0
         obs_history = []
-        obs_history.append(obs)
+        obs_history.append(infos['__common__']['obs_no_noise'])
 
         #for agent_name in cfg['env']['learned_agent_list']:
 
@@ -166,13 +166,13 @@ def data_worker(
             step += 1
 
             obs, rewards, terminations, truncations, infos = env.step(actions)
-            obs_history.append(obs)
+            obs_history.append(infos['__common__']['obs_no_noise'])
 
             done = {
                 "__all__": terminations["__all__"] or truncations["__all__"]
             }
 
-            data_point, _ = env.obs_packaging_func(obs_history, obs_map, [episode_agent], min_obs=min_obs)
+            data_point, _ = env.obs_packaging_func(obs_history, obs_map, [episode_agent], min_obs=min_obs, noise=env.noise)
             save_path = os.path.join(save_dir,'step_'+str(step)+'_'+episode_agent+'.npz')
             np.savez(save_path,**data_point[episode_agent])
 

@@ -4,10 +4,10 @@ from typing import Optional, Union
 
 from envs.marl.pf_wrapper import PFWrapper
 from evals.marl.observation_packaging import *
+from envs.marl.drones_env import CaravanAviary
 from envs.marl.rllib_wrapper import RLLibWrapper
-from envs.marl.drones_env import PredatorPreyAviary
-from envs.marl.particle_filter import PredatorPreyParticleFilter
 from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
+from envs.marl.particle_filters import PredatorPreyParticleFilter, DronesParticleFilter, FootballParticleFilter
 
 def make_marl_env(
         config: dict,
@@ -95,6 +95,7 @@ def make_predator_prey_env(
             obs_packaging_func=predator_prey_obs_packaging,
             eval=eval,
             belief_kwargs=belief_kwargs,
+            noise=config['env']['noise']
         )
     elif wrap == 'pf':
         env = PFWrapper(
@@ -134,13 +135,16 @@ def make_drones_env(
     wrap:bool
         if True wraps env in rllib wrapper
     '''
-    from gym_pybullet_drones.utils.enums import ActionType
-    from envs.marl.drones_env import PredatorPreyAviary
 
-    env = PredatorPreyAviary(
+    from envs.marl.drones_env import CaravanAviary
+    from gym_pybullet_drones.utils.enums import ActionType
+    from controllers.drone_control import drone_controller, action_to_vec, vec_to_action
+
+    env = CaravanAviary(
         agent_list=config['env']['agent_list'],
         learned_agent_list=config['env']['learned_agent_list'],
         controller_kwargs=config['env'].get('controller_kwargs'),
+        reward_kwargs=config['env'].get('reward_kwargs'),
         gui=False,
         act=ActionType.VEL,
         max_episode_length=config['env']['max_episode_length']*config['timestep'], # 10Hz step rate
@@ -151,9 +155,21 @@ def make_drones_env(
         env = RLLibWrapper(
             env=env,
             name='drones',
-            obs_packaging_func=predator_prey_obs_packaging,
+            obs_packaging_func=drones_obs_packaging,
             eval=eval,
-            belief_kwargs=belief_kwargs
+            dimension=3,
+            belief_kwargs=belief_kwargs,
+            noise=config['env']['noise']
+        )
+    elif wrap == 'pf':
+        env = PFWrapper(
+            env,
+            particle_filter = DronesParticleFilter,
+            agent_control_function = lambda obs, obs_map: action_to_vec(drone_controller(obs, obs_map, config['env']['controller_kwargs'])),
+            target_control_function = lambda obs, obs_map: action_to_vec(vec_to_action(env.env._scripted_target_action(obs=obs)[0:3])),
+            dim=3,
+            eval=eval,
+            belief_kwargs=config['env']['belief_kwargs'],
         )
     elif wrap is None:
         pass
@@ -248,6 +264,7 @@ def make_fire_env(
         fire_controller=probabilistic_fire_controller,
         controller_kwargs=config['env'].get('controller_kwargs'),
         reward_kwargs = config['env'].get('reward_kwargs'),
+        **config['env']['env_kwargs'],
     )
 
     if wrap == 'rllib':

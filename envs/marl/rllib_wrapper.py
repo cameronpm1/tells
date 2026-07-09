@@ -24,6 +24,7 @@ class RLLibWrapper(MultiAgentEnv):
             eval: bool = False,
             belief_kwargs: Optional[dict] = None,
             dimension: int = 2,
+            noise: Optional[float] = None,
     ): 
         super().__init__()
 
@@ -36,6 +37,7 @@ class RLLibWrapper(MultiAgentEnv):
         self.agents = deepcopy(env.agents)
         self.obs_packaging_func = obs_packaging_func
         self.last_raw_reward = None
+        self.noise = noise
 
         self.single_observation_spaces = {
             agent: self.env._observation_space(agent)
@@ -77,9 +79,7 @@ class RLLibWrapper(MultiAgentEnv):
         rew = dict(rew)
 
         if self.eval:
-            infos = {'target': obs['target']}
-        else:
-            infos = {}
+            infos['target'] = obs['target']
 
         obs.pop("target", None)
         rew.pop('target', None)
@@ -93,23 +93,34 @@ class RLLibWrapper(MultiAgentEnv):
         if self.belief:
             self.obs_history.append(deepcopy(obs))
         
-        infos['__common__'] = {}
         infos['__common__']['raw_reward'] = sum(rew.values())
+        infos['__common__']['obs_no_noise'] = deepcopy(obs)
+
+        if self.noise is not None:
+            for agent in self.agents:
+                obs[agent][self.env.obs_map['team']] = obs[agent][self.env.obs_map['team']] + np.random.normal(0, self.noise['team'], size=(self.n_agents-1)*self.dim,)
+                obs[agent][self.env.obs_map['target_pos']] = obs[agent][self.env.obs_map['target_pos']] + np.random.normal(0, self.noise['target'], size=self.dim,)
 
         self.last_raw_reward = sum(rew.values())
 
         #fill in observations
         if self.belief:
-            converted_obs, obs_idxs = self.obs_packaging_func(self.obs_history, self.env.obs_map, self.agents, min_obs=self.belief_n, noise=None)
+            converted_obs, obs_idxs = self.obs_packaging_func(self.obs_history, self.env.obs_map, self.agents, min_obs=self.belief_n, noise=self.noise)
             predictions = {}
             errors = []
             for agent, agent_obs in obs.items():
-                team_state = self.belief_model.model(torch.from_numpy(converted_obs[agent]['input']).to(torch.float32))
+                team_state, mu, logvar = self.belief_model.model(torch.from_numpy(converted_obs[agent]['input']).to(torch.float32))
                 team_state = team_state.detach().cpu().numpy()[obs_idxs]
-                error = self.permutation_invariant_error(team_state, agent_obs[self.env.obs_map['team']])
+                #error = self.permutation_invariant_error(team_state, agent_obs[self.env.obs_map['team']])
+                pred_t = torch.from_numpy(np.asarray(team_state, dtype=np.float32)).unsqueeze(0)
+                target_t = torch.from_numpy(np.asarray(agent_obs[self.env.obs_map['team']], dtype=np.float32)).unsqueeze(0)
+                error, _ = self.belief_model.model.loss(pred_t, target_t, mu.unsqueeze(0), logvar.unsqueeze(0))
+                error = error.item()
                 self.obs_history[-1][agent][self.env.obs_map['team']] = team_state
                 errors.append(error)
                 predictions[agent] = team_state
+                #compute individual reward penalty for deviation of belief model
+                rew[agent] = rew[agent] - error * self.env.reward_cfg['belief_dev_scale']
             avg_error = np.average(errors)
             infos['__common__']['belief_error'] = avg_error
             self.prediction_history.append(predictions)
@@ -121,10 +132,15 @@ class RLLibWrapper(MultiAgentEnv):
         obs,infos = self.env.reset(**kwargs)
 
         obs.pop("target", None)
-
-        infos['__common__'] = {}
+        
         infos['__common__']['raw_reward'] = 0.0
+        infos['__common__']['obs_no_noise'] = deepcopy(obs)
         self.last_raw_reward = 0.0
+
+        if self.noise is not None:
+            for agent in self.agents:
+                obs[agent][self.env.obs_map['team']] = obs[agent][self.env.obs_map['team']] + np.random.normal(0, self.noise['team'], size=(self.n_agents-1)*self.dim,)
+                obs[agent][self.env.obs_map['target_pos']] = obs[agent][self.env.obs_map['target_pos']] + np.random.normal(0, self.noise['target'], size=self.dim,)
 
         if self.belief:
             self.obs_history = []
@@ -140,9 +156,21 @@ class RLLibWrapper(MultiAgentEnv):
             infos['__common__']['belief_error'] = 0.0
 
         return obs,infos
-    
-    def close(self):
-        self.env.unwrapped.close()
+
+    def close_all(self):
+        """Close the wrapped environment if it supports close, then mark this wrapper closed."""
+        if hasattr(self.env, "close") and callable(self.env.close):
+            try:
+                self.env.close()
+            except Exception:
+                pass
+        elif hasattr(self.env, "unwrapped") and hasattr(self.env.unwrapped, "close") and callable(self.env.unwrapped.close):
+            try:
+                self.env.unwrapped.close()
+            except Exception:
+                pass
+
+        super().close()
 
     def render_rgb(self):
         return self.env.render_rgb()

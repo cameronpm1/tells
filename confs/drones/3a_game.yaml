@@ -1,8 +1,11 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/drones1
+min_obs: 5
+logdir: /home/cameron/tells/logs/marl/drones_bc_newctrl2
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
+
+
 
 alg:
   type : ppo
@@ -16,7 +19,7 @@ alg:
   num_gpus: 0
   pi : [256, 256, 256]
   vf : [256, 256, 256]
-  timesteps: 3000
+  timesteps: 5000
   checkpoint_freq: 250
   minibatch_size: 512
   num_epochs: 3
@@ -27,8 +30,8 @@ alg:
   grad_clip: 0.25
   pretrain:
     enabled: true
-    episodes: 900
-    epochs: 28
+    episodes: 1000
+    epochs: 40
     batch_size: 1024
     lr: 0.0005
     value_loss_coef: 0.02
@@ -37,34 +40,43 @@ alg:
 
 env:
   scenario: 3_agent_drones
-  max_episode_length: 400 #in seconds
+  max_episode_length: 200 #in seconds
   agent_list: ['agent0', 'agent1', 'agent2', 'target']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
+  noise:
+    team: 0.7
+    target: 0.7
   env_kwargs:
     grid_size: 20
     num_goal_boxes: 5
     num_protectors: 3
     goal_box_spacing: 1.0
     goal_box_half_extents: [0.5, 0.5, 0.1]
-    protection_radius: &protection_radius 1.1
+    protection_radius: &protection_radius 0.6
     intrusion_radius: 0.5
     base_altitude: 0.5
     base_speed: 3.0
-    speed_ratio: 0.55
+    speed_ratio: 0.8
     target_spawn_distance: 5.0
   controller_kwargs:
-    adversary_repulsion_radius: 1.1
-    adversary_repulsion_gain: 1.0
+    adversary_repulsion_radius: 2.0
+    adversary_repulsion_gain: 2.0
     adversary_attraction_gain: 1.0
-    adversary_replan_steps: 10
+    adversary_replan_steps: 5
     protection_radius: *protection_radius
     target_response: 1.0
     follow_threshold: 0.35
     max_gap_factor: 1.05
+    goal_spacing: 2.0
     deadzone: 0.2
     altitude_deadzone: 0.15
     min_altitude: 0.25
     max_altitude: 1.5
+  reward_kwargs:
+    protected_scale: 0
+    intruded_penatly: 1000
+    step_reward: 1
+    bc_scale: 0.5
 
 sim:
   n: 3 #number of pursuit agents

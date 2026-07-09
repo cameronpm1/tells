@@ -80,7 +80,7 @@ rm -f third_party/gfootball_engine/CMakeCache.txt
 
 ## Usage
 
-### Training
+### Training a Fully-Observable Model
 ```bash
 python run.py --command marl_train --config confs/predator_prey/3a_game.yaml
 ```
@@ -88,7 +88,7 @@ or
 ```bash
 python run.py --command marl_train --config confs/drones/3a_game.yaml
 ```
-- Starts training using the specified configuration file  
+- Starts training using the specified configuration file, look in `confs/` to see all environment config files
 - Logs are stored in: `logs/marl/` (will autogenerate the directory if not already created)
 
 ---
@@ -111,64 +111,7 @@ tensorboard --logdir logs/marl/test12/
 
 ---
 
-## Important Class Structures (predator_prey)
-
-### Environment Framework
-- The MARL framework uses the `PredatorPreyEnv` located in:
-  ```
-  envs/marl/
-  ```
-
-### Scenario Design
-- Base scenario class: `PredatorPreyScenario`  
-- Built on the MPE2 codebase  
-
-#### Simulation Details
-- 2D point-mass environment  
-- N agents  
-- 1 target  
-
-### Target Behavior
-- Controlled via a potential fields algorithm  
-- Computes opposing forces to guide target movement  
-- Objective, agents must corral the target toward a predefined landmark  
-
-### Episode Cutoffs
-- Max episode steps reached
-- Target or agent location outside of GRID_SIZE (defined in env file)
-
-### Environment Composition
-- `PredatorPreyScenario` is wrapped inside:
-  ```
-  ScenarioEnv
-  ```
-  - Custom MPE2 container class  
-
-#### Full Environment Stack
-```
-PredatorPreyEnv (Gym Environment)
-    └── ScenarioEnv
-            └── PredatorPreyScenario
-```
-
-### RLlib Integration
-- `PredatorPreyEnv` is wrapped with:
-  ```
-  RLlibWrapper
-  ```
-- Ensures compatibility with RLlib MultiAgentEnv interface  
-- Used for both training and evaluation pipelines  
-
-## Important Class Structures (drones)
-
-### Environment Framework
-
-- The pybullet-drones environment is handled by DroneEnv, and uses similar rules to the predator_prey environment but adapted to a 3D drone framework
-- The DroneEnv is wrapped inside RlLibWrapper so that the same training script can be used for both environments
-
-## Training a Belief Model
-
-### Data Collection
+### Collect Data to Train a Belief Model
 
 - Data for the belief model is stored inside a data/ directory
 -Data collection can be run by using the collect_data command:
@@ -181,56 +124,97 @@ python run.py --command marl_collect_data --config confs/predator_prey/3a_game.y
 
 - n_workers is the number of parallel environments to create when collecting data (important unless you want to wait a while)
 
-- currently, collect data is only supported for predator_prey class, and for each timestep will log a timeseries of the preys behavior leading up to that timestep in relation to a randomly selected predator A, as well as the state of the other predators in relation to A
+---
 
-### Training a Model
+### Training a Belief Model
 
 - Once data is collected, a model can be trained by running the following command: 
 
 ```bash
-python run.py --command belief_train --config confs/belief/test1.yaml
+python run.py --command belief_train --config confs/belief/predator_prey.yaml
 ```
 
-- Training data is loaded with the custom_dataset class inside learn/belief/custom_dataset.py. It is important to make sure that the .get_data() function properly loads in data
+---
 
-### Evaluating a Model
+### Evaluating a Belief Model with an RL Policy
 
 - Model evaluation can be done by running:
 
 ```bash
-python run.py --command belief_eval --model_dir logs/belief/_ppotest1_NN_ppotest2/lightning_logs/checkpoints/{epoch}_{val_loss} --config confs/belief/test1.yaml
+python run.py --command marl_eval_belief --belief_dir logs/belief/predator_prey_belief/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config confs/belief/pre.yaml --config confs/predator_prey/3a_game.yaml --model_dir logs/marl/ppo_bc_ex/checkpoint4500/
 ```
 
 - This will create a directory called test_outputs inside the model_dir and save several test videos to it. In order to edit how the videos are created/saved look at .test_save() inside the belief model class
 
-### Model Parameters
+---
 
-- Model input and output parameters are defined inside the config file, as well as training parameters (lr, epochs, etc.)
+### Retrain RL Policy with Belief Model
 
-- To edit model architecture/loss function see models.py inside learn/belief
-
-## Testing Policy with a Belief Model
+- Model evaluation can be done by running:
 
 ```bash
-python run.py --command marl_eval_belief --belief_dir logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config confs/belief/test1.yaml --config confs/predator_prey/3a_game.yaml --model_dir logs/marl/ppo_bc_ex/checkpoint4500/
+python run.py --command marl_train_belief --belief_dir logs/belief/predator_prey_belief/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config confs/belief/predator_prey.yaml --config confs/predator_prey/3a_game_allocentric.yaml --model_dir logs/marl/predator_prey/checkpoint5000/
 ```
 
-## Training a Policy with a Belief Model
+- retrains the fully-observable RL policy in the communication denied environment using the belief model. Adds variational free energy loss term. Pay attention to config files! Retraining requires a config with `allocentric` in its name. You must use the same config file when evaluating the trained model with `--command marl_train_belief`
+
+## Adversarial Environments
+- `PredatorPreyScenario` is based on openai's mpe environemnt:
+
+  - Several layers of classes:
+  ```
+  PredatorPreyEnv (Gym Environment)
+      └── ScenarioEnv
+              └── PredatorPreyScenario
+  ```
+
+- `CaravanAviary` uses pybullet-drones to create a caravan protection env
+
+- `CirclePass5v1Env` built off google research football
+
+  - Custom rondo environment defined in `build_scenario`
+
+- `DroneFireEnv` custom gym environment for drone fire-fighting scenario
+
+  - `DroneFireSim` handles environemnt dynamics
+
+  ```
+  DroneFireEnv (Gym Environment)
+      └── DroneFireSim
+  ```
+
+### RLlib Integration
+- All environments are wrapped with:
+  ```
+  RLlibWrapper
+  ```
+- Ensures compatibility with RLlib MultiAgentEnv interface  
+- Used for both training and evaluation pipelines  
+
+### Important Environment Structures
+
+- Unique environment parameters should always exist inside the gym envirnment, the RLlibWrapper should act as a generic wrapper for all environments
+
+- Each gym environment must have a parameter obs_map which is a dictionary of labels and slices. Labels must match terminology in current environments if integrating a new one -- important for ensuring RLlibWrapper functions correctly
+
+- All gym environmnents must provide action/observation space per agent, not for entire environment. Full environment action/observation space is compiled in RLlibWrapper. This is uncommon for gym environments so worthy of noting for future developing.
+
+## Testing Baselines
+
+### Train Particle Filter
 
 ```bash
-python run.py --command marl_train_belief --belief_dir logs/belief/_ppo_bc_noisierinject_NN_ppo_bc_test3/lightning_logs/checkpoints/{epoch}_{val_loss} --belief_config confs/belief/test1.yaml --config confs/predator_prey/3a_game.yaml
+python run.py --command pf_train --config confs/predator_prey/3a_game_pf.yaml
 ```
 
-## Baselines
-
-### Test Particle Filter
+---
 
 ```bash
-python run.py --command pf_eval --model_dir logs/marl/ppo_bc/checkpoint2000 --config confs/predator_prey/3a_game.yaml
+python run.py --command pf_eval --model_dir logs/marl/predator_prey_pf/checkpoint2000 --config confs/predator_prey/3a_game_pf.yaml
 ```
 
 ---
 
 ## Notes
 - Designed for experimentation in decentralized, communication-restricted coordination tasks  
-- Modular structure allows extension to additional scenarios and agent behaviors  
+- Modular structure allows easy integration for additional scenarios and agent behaviors  

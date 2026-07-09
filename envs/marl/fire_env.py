@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 matplotlib.use("Agg")  
 
-from controllers.fire_control import probabilistic_fire_controller
+from controllers.fire_control import probabilistic_fire_controller, extinguish_controller
 
 GRID_SIZE = 60
 
@@ -22,7 +22,7 @@ class DroneFireEnv(gymnasium.Env):
         drone_start_area: list[int] = [0, 0],
         controller_kwargs: Optional[dict] = None,
         reward_kwargs: Optional[dict] = None,
-        observation_range: int = 20,
+        observation_range: int = 30,
         local_observations: bool = False,
         warm_up_steps: int = 10,
         local_radius: int = 5,
@@ -66,8 +66,8 @@ class DroneFireEnv(gymnasium.Env):
 
         return spaces.Box(
             low=0,
-            high=3,
-            shape=((self.observation_range * 2 + 1)**2,),
+            high=4,
+            shape=((self.observation_range * 2 + 1),(self.observation_range * 2 + 1),),
             dtype=np.int8,
         )
 
@@ -75,7 +75,7 @@ class DroneFireEnv(gymnasium.Env):
         return spaces.Discrete(len(self.env.ACTION_LIBRARY))
 
     def _sample_center_quarter_ignition_points(self, n_points=3):
-        lo, hi = GRID_SIZE // 4, 3 * GRID_SIZE // 4
+        lo, hi = int(GRID_SIZE*0.45), int(GRID_SIZE*0.55)
         pts = []
         while len(pts) < n_points:
             pt = np.array([np.random.randint(lo, hi), np.random.randint(lo, hi)], dtype=np.int32)
@@ -112,19 +112,24 @@ class DroneFireEnv(gymnasium.Env):
             actions = {agent: 0 for agent in self.agents}
             obs, rew, done, info = self.env.step(actions)
 
-        info = {agent: {} for agent in self.agents}
+        self.info = {'__common__':{}}
+        self.info['__common__']['decomposed_obs'] = {agent: deepcopy(self.obs[agent]) for agent in self.agents}
+        self.obs = self._combine_obs(self.obs)
 
-        return deepcopy(self.obs), info
+        return deepcopy(self.obs), deepcopy(self.info)
 
     def step(self, action_dict: dict):
         self._step += 1
 
         fire_before_actions = self.env.fire_state.copy()
+        #action_dict = encirclement_controller(self.obs)
 
         filtered_actions = {}
         for agent in self.agents:
             action = action_dict.get(agent, 0)
             filtered_actions[agent] = self.boundary_safe_action(agent, action)
+
+        controller_metrics = self.behavior_cloning_reward(action_dict)
 
         obs, rew, done, info = self.env.step(filtered_actions)
 
@@ -132,31 +137,53 @@ class DroneFireEnv(gymnasium.Env):
         terminations = done
         #reward = self._compute_reward()
 
-        info = {}
+        self.info = {'__common__':{}}
         self.obs = self._compute_obs(obs)
+        rew = self._compute_reward(controller_metrics)
         reward = {agent : rew for agent in self.agents}
         reward['target'] = 0.0
         truncations = {agent : truncations for agent in self.full_agent_list}
         terminations = {agent : terminations or done for agent in self.full_agent_list}
-        info = {agent : info for agent in self.agents}
+        self.info['__common__']['decomposed_obs'] = {agent: deepcopy(self.obs[agent]) for agent in self.agents}
+        self.obs = self._combine_obs(self.obs)
 
-        return deepcopy(self.obs), reward, terminations, truncations, info
+        return deepcopy(self.obs), reward, terminations, truncations, deepcopy(self.info)
 
     def _compute_obs(self, obs):
         obs_dict = {}
-        window_size = self.observation_range * 2 + 1
 
         for agent in self.agents:
             agent_pos = obs['drones'][agent]
             partial_obs = self._local_fire_window(obs['fire'], agent_pos)
+            team = []
 
             for agent2 in self.agents:
                 if agent2 == agent:
                     continue
 
-                other_pos = obs['drones'][agent2]
-                rel_r = other_pos[0] - agent_pos[0]
-                rel_c = other_pos[1] - agent_pos[1]
+                team.append(obs['drones'][agent2]-agent_pos)
+
+            agent_obs = partial_obs
+            obs_dict[agent] = {}
+            obs_dict[agent]['fire'] = partial_obs
+            obs_dict[agent]['team'] = team
+            obs_dict[agent]['pos'] = agent_pos
+
+
+        obs_dict['target'] = self.env.fire_state
+
+        return obs_dict
+
+    def _combine_obs(self, obs):
+        new_obs = {}
+        window_size = self.observation_range * 2 + 1
+
+        for agent in self.agents:
+            partial_obs = obs[agent]['fire']
+
+            for team_pos in obs[agent]['team']:
+                rel_r = team_pos[0]
+                rel_c = team_pos[1]
 
                 if abs(rel_r) <= self.observation_range and abs(rel_c) <= self.observation_range:
                     cross_r = rel_r + self.observation_range
@@ -165,16 +192,50 @@ class DroneFireEnv(gymnasium.Env):
                         if 0 <= rr < window_size and 0 <= cc < window_size:
                             partial_obs[rr, cc] = 3.0
 
-            agent_obs = partial_obs.flatten().astype(np.int8)
-            obs_dict[agent] = agent_obs
+            new_obs[agent] = partial_obs
 
-        obs_dict['target'] = {'target': self.env.fire_state}
+        new_obs['target'] = obs['target']
+        return new_obs
 
-        return obs_dict
+    def behavior_cloning_reward(self, action_dict: dict) -> dict:
+        controller_actions = extinguish_controller(self.info['__common__']['decomposed_obs'])
+        action_matches = []
+
+        for agent in self.agents:
+            if agent not in action_dict or agent not in controller_actions:
+                continue
+
+            learned_action = int(action_dict[agent])
+            action_matches.append(float(learned_action == controller_actions[agent]))
+
+        if len(action_matches) == 0:
+            controller_action_match = 0.0
+        else:
+            controller_action_match = float(np.mean(action_matches))
+        controller_action_error = 1.0 - controller_action_match
+
+        return {
+            'controller_action_error': controller_action_error,
+            'controller_action_match': controller_action_match,
+            'controller_action_reward': controller_action_match,
+        }
 
     def _compute_reward(
         self,
+        controller_metrics,
     ):
+        reward = 0
+        green_count = np.sum(self.env.fire_state == self.env.GREEN)
+        non_green_ratio = 1 - green_count / GRID_SIZE**2
+
+        reward += non_green_ratio * self.reward_kwargs['green_scale']
+        reward += controller_metrics['controller_action_reward'] * self.reward_kwargs['bc_scale']
+
+        if np.all(self.env.fire_state != self.env.GREEN):
+            return self.reward_kwargs['lose_penalty']
+        if np.all(self.env.fire_state != self.env.RED):
+            return self.reward_kwargs['extinguish_reward']
+
         return 0.0
 
     def _compute_truncation(self):
@@ -192,7 +253,7 @@ class DroneFireEnv(gymnasium.Env):
             fire_state,
             pad_width=radius,
             mode="constant",
-            constant_values=self.env.GREEN,
+            constant_values=self.env.WHITE,
         )
 
         rp = r + radius
@@ -248,12 +309,13 @@ class DroneFireEnv(gymnasium.Env):
         return frame
 
 class DroneFireSim:
-    GREEN, RED, BLACK = 0, 1, 2
+    GREEN, RED, BLACK, WHITE = 0, 1, 2, 3
 
     COLORS = np.array([
         [0, 255, 0],    # green
         [255, 0, 0],    # red
         [0, 0, 0],      # black
+        [255, 255, 255], #white
     ], dtype=np.uint8)
 
     ACTION_LIBRARY = {
@@ -415,7 +477,7 @@ class DroneFireSim:
         self.fire_state = self.fire_controller(self.fire_state).astype(np.int8)
         self.t += 1
 
-        if np.all(self.fire_state != self.GREEN):
+        if np.all(self.fire_state != self.GREEN) or np.all(self.fire_state != self.RED):
             done = True
         else:
             done = False

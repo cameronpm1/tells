@@ -33,8 +33,8 @@ sys.path.insert(0, str(FOOTBALL_REPO))
 compute team initial positions
 '''
 
-rx = 0.28 #0.21
-ry = 0.18 #0.135
+rx = 0.21 #0.28 #0.21
+ry = 0.135 #0.18 #0.135
 n_passers = 5
 
 AGENT_ANCHORS = []
@@ -177,7 +177,7 @@ class CirclePass5v1Env(gym.Env):
         new_obs = self._convert_obs(obs_no_gk, first=True)
         self.obs = new_obs
 
-        return deepcopy(self.obs), {}
+        return deepcopy(self.obs), {'__common__':{}}
 
     def step(
         self, 
@@ -185,12 +185,13 @@ class CirclePass5v1Env(gym.Env):
     ):
 
         self._step += 1
-
+        
         actions = []
         for agent in self.agents:
             actions.append(actions_dict[agent])
-
+        controller_metrics = self.behavior_cloning_reward(actions_dict)
         if self._step == 1:
+            #adversary_action = 0
             adversary_action = 10 #turn on sprint 
         else:
             adversary_action = self.adversary_controller(self.obs['target'],self.obs_map,self.controller_kwargs)
@@ -200,12 +201,13 @@ class CirclePass5v1Env(gym.Env):
         obs, base_reward, done, info = self.env.step(actions)
 
         self.raw_obs = obs
+        self.oob = done
 
         obs_no_gk = np.delete(obs,0)
         obs_no_gk = np.delete(obs_no_gk,self.n_agents+1)
         new_obs = self._convert_obs(obs_no_gk)
         self.obs = new_obs
-        reward = self._compute_team_reward(self.obs)
+        reward = self._compute_team_reward(self.obs,controller_metrics)
         truncation = self._compute_truncation()
         termination = self._compute_termination()
         info = {}
@@ -214,7 +216,7 @@ class CirclePass5v1Env(gym.Env):
         reward['target'] = 0.0
         truncations = {agent : truncation for agent in self.full_agent_list}
         terminations = {agent : termination or done for agent in self.full_agent_list}
-        info = {agent : info for agent in self.agents}
+        info['__common__'] = {agent : info for agent in self.agents}
 
         terminations["__all__"] = all(terminations.values())
         truncations["__all__"] = all(truncations.values())
@@ -224,7 +226,7 @@ class CirclePass5v1Env(gym.Env):
     def _convert_obs(self, obs, first=False):
 
         new_obs = {}
-        ball_owner = self.prev_ball_owned_player
+        ball_owner = None
         for i,agent_obs in enumerate(obs):
             if i < self.n_agents:
                 agent_name = self.agents[i]
@@ -238,7 +240,7 @@ class CirclePass5v1Env(gym.Env):
 
                 if agent_obs['ball_owned_team'] == 0 and agent_obs['ball_owned_player'] == i + 1:
                     ball_owner = i
-                elif np.linalg.norm(agent_obs['ball'][0:2] - pos) < 0.03:
+                elif np.linalg.norm(agent_obs['ball'][0:2] - pos) < 0.03 and np.linalg.norm(agent_obs['ball_direction']) < 0.001:
                     ball_owner = i
 
                 ball = deepcopy(AGENT_ANCHORS[i])
@@ -275,21 +277,45 @@ class CirclePass5v1Env(gym.Env):
 
         for agent_name in self.agents:
             ball_owner_array = np.zeros((len(self.agents) + 1))
-            if ball_owner >= 0:
+            if ball_owner is not None:
                 ball_owner_array[ball_owner] = 1
             new_obs[agent_name] = np.concatenate((new_obs[agent_name],ball_owner_array))
 
 
         return new_obs
 
+    def behavior_cloning_reward(self, action_dict: dict) -> dict:
+        controller_actions = compute_rondo_actions(deepcopy(self.obs), self.obs_map)
+        action_matches = []
 
-    def _compute_team_reward(self, obs):
+        for agent in self.agents:
+            if agent not in action_dict or agent not in controller_actions:
+                continue
+
+            learned_action = int(action_dict[agent])
+            action_matches.append(float(learned_action == controller_actions[agent]))
+
+        if len(action_matches) == 0:
+            controller_action_match = 0.0
+        else:
+            controller_action_match = float(np.mean(action_matches))
+        controller_action_error = 1.0 - controller_action_match
+
+        return {
+            'controller_action_error': controller_action_error,
+            'controller_action_match': controller_action_match,
+            'controller_action_reward': controller_action_match,
+        }
+
+    def _compute_team_reward(self, obs, controller_metrics):
 
         reward = 0
-        
+        reward += controller_metrics['controller_action_reward'] * self.reward_kwargs['controller_match_reward']
         ball_owner = np.where((obs['agent0'][self.obs_map['ball_owner']]) == 1)[0]
         target_has_ball = obs['target'][self.obs_map['target_ball_owned']][0]
-        if target_has_ball:
+        if self.oob:
+            return self.reward_kwargs['oob_penalty']
+        elif target_has_ball:
             return self.reward_kwargs['target_steal_penalty']
         else:
             if len(ball_owner) > 0:
@@ -306,7 +332,7 @@ class CirclePass5v1Env(gym.Env):
 
         dev = np.linalg.norm(self.raw_obs[0]['left_team'][1:] - AGENT_ANCHORS, axis=1)
         dev_threshold = [1 if d > self.reward_kwargs['deviation_threshold'] else 0 for d in dev]
-        reward -= (5 - sum(dev_threshold)) * self.reward_kwargs['deviation_scale']
+        reward += (5 - sum(dev_threshold)) * self.reward_kwargs['deviation_scale']
 
         return reward
 

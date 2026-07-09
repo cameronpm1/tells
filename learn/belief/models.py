@@ -65,6 +65,59 @@ class NN2CNN(nn.Module):
 
 		return x
 
+class predator_prey_VAE_NN(nn.Module):
+	def __init__(self, input_channels, output_channels, latent_dim=16):
+		super().__init__()
+
+		self.loss = PermutationInvariantVAEMSE()
+		self.val_loss = PermutationInvariantMSE()
+
+		self.linear1 = nn.Linear(input_channels, 512)
+		self.linear2 = nn.Linear(512, 1024)
+		self.linear3 = nn.Linear(1024, 4096)
+		self.linear6 = nn.Linear(4096, 1024)
+		self.linear7 = nn.Linear(1024, 64)
+
+		self.vae = VAELayer(64, latent_dim)
+		self.decoder = nn.Linear(latent_dim, output_channels)
+
+	def forward(self, x):
+		x = nn.functional.relu(self.linear1(x))
+		x = nn.functional.relu(self.linear2(x))
+		x = nn.functional.relu(self.linear3(x))
+		x = nn.functional.relu(self.linear6(x))
+		x = nn.functional.relu(self.linear7(x))
+
+		z, mu, logvar = self.vae(x)
+		pred = self.decoder(z)
+
+		return pred, mu, logvar
+
+class drones_VAE_NN(nn.Module):
+    def __init__(self, input_channels, output_channels, latent_dim=16):
+        super().__init__()
+
+        self.linear1 = nn.Linear(input_channels, 512)
+        self.linear2 = nn.Linear(512, 1024)
+        self.linear3 = nn.Linear(1024, 4096)
+        self.linear6 = nn.Linear(4096, 1024)
+        self.linear7 = nn.Linear(1024, 64)
+
+        self.vae = VAELayer(64, latent_dim)
+        self.decoder = nn.Linear(latent_dim, output_channels)
+
+    def forward(self, x):
+        x = nn.functional.relu(self.linear1(x))
+        x = nn.functional.relu(self.linear2(x))
+        x = nn.functional.relu(self.linear3(x))
+        x = nn.functional.relu(self.linear6(x))
+        x = nn.functional.relu(self.linear7(x))
+
+        z, mu, logvar = self.vae(x)
+        pred = self.decoder(z)
+
+        return pred, mu, logvar
+
 class predator_prey_NN(nn.Module):
 
 	def __init__(self, 
@@ -73,6 +126,9 @@ class predator_prey_NN(nn.Module):
 				p_mc_dropout = 0.5) :
 		
 		super().__init__()
+
+		self.loss = PermutationInvariantMSE()
+		self.val_loss = PermutationInvariantMSE()
 		
 		self.p_mc_dropout = p_mc_dropout
 
@@ -111,7 +167,7 @@ class PermutationInvariantMSE(nn.Module):
 
 		l1 = self.permutation_invariant_loss(pred[:,0:4], target[:,0:4])
 		l2 = self.permutation_invariant_loss(pred[:,4:8], target[:,4:8])
-		return l1*0.7 + l2*0.3
+		return l1 + l2
 
 	def permutation_invariant_loss(self, pred, target):
 		"""
@@ -167,3 +223,107 @@ class PermutationInvariantMSE(nn.Module):
 		# Take minimum per sample, then sum batch
 		return np.minimum(direct, swapped).sum()
 
+
+class PermutationInvariantVAEMSE(nn.Module):
+
+	def __init__(self):
+		super().__init__()
+
+	def forward(self, pred, target, mu, logvar, beta_kl=1e-2,):
+
+		kl_loss = -0.5 * torch.sum(
+			1 + logvar - mu.pow(2) - logvar.exp(),
+			dim=1
+		)
+		kl_loss = kl_loss.mean() * beta_kl
+		
+		l1 = self.permutation_invariant_loss(pred[:,0:4], target[:,0:4])
+		l2 = self.permutation_invariant_loss(pred[:,4:8], target[:,4:8])
+		return l1 + l2 + kl_loss, kl_loss #kl1+kl2
+
+	def permutation_invariant_loss(
+		self,
+		recon,
+		target,
+		return_parts=False,
+	):
+
+		recon = recon.view(-1, 2, 2)
+		target = target.view(-1, 2, 2)
+
+		mse_direct = ((recon - target) ** 2).mean(dim=2).sum(dim=1)
+		mse_swapped = ((recon - target.flip(1)) ** 2).mean(dim=2).sum(dim=1)
+
+		recon_loss = torch.min(mse_direct, mse_swapped)
+
+		return recon_loss.mean()
+
+	def error(self, pred, target):
+		"""
+		pred:   (N, 6)
+		target: (N, 6)
+
+		Returns:
+			scalar, sum over batch of minimum assignment distances
+		"""
+		e1 = self.two_by_two_error(pred[:,0:4].cpu().numpy(), target[:,0:4].cpu().numpy())
+		e2 = self.two_by_two_error(pred[:,4:8].cpu().numpy(), target[:,4:8].cpu().numpy())
+		return e1 + e2
+
+	def two_by_two_error(self, pred, target):
+
+		# Reshape to (N, 2, 3)
+		pred = pred.reshape(-1, 2, 2)
+		target = target.reshape(-1, 2, 2)
+
+		# Direct assignment distances
+		direct = (
+			np.linalg.norm(pred[:, 0] - target[:, 0], axis=1) +
+			np.linalg.norm(pred[:, 1] - target[:, 1], axis=1)
+		)
+
+		# Swapped assignment distances
+		swapped = (
+			np.linalg.norm(pred[:, 0] - target[:, 1], axis=1) +
+			np.linalg.norm(pred[:, 1] - target[:, 0], axis=1)
+		)
+
+		# Take minimum per sample, then sum batch
+		return np.minimum(direct, swapped).sum()
+
+
+class VAELayer(nn.Module):
+    """
+    A custom Variational Autoencoder bottleneck layer.
+    Maps an incoming hidden representation to a latent distribution, 
+    samples from it using the reparameterization trick, and prepares it for decoding.
+    """
+    def __init__(self, hidden_dim: int, latent_dim: int):
+        super(VAELayer, self).__init__()
+        
+        # Parallel layers to parameterize the Gaussian latent distribution
+        self.fc_mu = nn.Linear(hidden_dim, latent_dim)
+        self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
+        
+    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor, stochastic: bool = False) -> torch.Tensor:
+        """
+        Applies the reparameterization trick to allow backpropagation.
+        """
+        if self.training or stochastic:
+            # Calculate standard deviation: std = exp(0.5 * logvar)
+            std = torch.exp(0.5 * logvar)
+            # Sample random noise epsilon from standard normal distribution
+            eps = torch.randn_like(std)
+            # Return the sampled latent vector
+            return mu + eps * std
+        else:
+            # During evaluation/inference, bypass noise and use the mean directly
+            return mu
+			
+    def forward(self, h: torch.Tensor, stochastic: bool = False):
+        mu = self.fc_mu(h)
+        logvar = self.fc_logvar(h)
+        logvar = torch.clamp(logvar, min=-10.0, max=10.0)
+        z = self.reparameterize(mu, logvar, stochastic=stochastic)
+
+        return z, mu, logvar

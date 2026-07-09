@@ -4,7 +4,7 @@ import numpy as np
 
 from util.util import mkdir, load_config
 from envs.marl.football_env import CirclePass5v1Env
-from envs.marl.drones_env import PredatorPreyAviary
+from envs.marl.drones_env import CaravanAviary
 from controllers.football_control import compute_rondo_actions
 from util.util import mkdir, load_config, save_argb_video, save_rgb_gif 
 from envs.marl.make_env import make_drones_env, make_predator_prey_env, make_marl_env
@@ -123,6 +123,7 @@ def football_test():
     env.close()
 
 def fire_test():
+    from controllers.fire_control import encirclement_controller
     config_path = '/home/cameron/tells/confs/fire/4a_game.yaml'
     cfg = load_config(config_path)
 
@@ -131,7 +132,7 @@ def fire_test():
     obs = env.reset()
     images = []
 
-    max_episode_length = 20
+    max_episode_length = 100
 
     for step in range(max_episode_length):
         actions = {'agent0': 0, 'agent1': 0, 'agent2': 0, 'agent3': 0}
@@ -163,5 +164,11 @@ if __name__ == "__main__":
     #test_usv_game()
     #test_usv_env()
     #drone_test()
-    football_test()
-    #fire_test()
+    #football_test()
+    fire_test()
+
+#good allo run:
+# python run.py --command marl_eval_belief --config confs/predator_prey/3a_game_allocentric.yaml --model_dir logs/marl/pp_noisem_allo/checkpoint12000 --belief_config /home/cameron/tells/confs/belief/predator_prey.yaml --belief_dir /home/cameron/tells/logs/belief/_pp_bc_noisem_7n_predator_prey_NN_pp_7n_test/lightning_logs/checkpoints/{epoch}_{val_loss}
+
+
+#python run.py --command marl_eval_belief --config confs/predator_prey/3a_game_allocentric.yaml --model_dir logs/marl/pp_bc_noisem/checkpoint10000 --belief_config /home/cameron/tells/confs/belief/predator_prey.yaml --belief_dir logs/belief/_pp_bc_noisem_7n_predator_prey_VAE_NN_vae1_test4/lightning_logs/checkpoints/{epoch}_{val_loss}

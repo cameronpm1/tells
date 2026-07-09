@@ -1,14 +1,14 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/fire1
+logdir: /home/cameron/tells/logs/marl/fire_longpre
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 alg:
   type : ppo
   lr : 0.00003
   gamma: 0.99
-  nenvs : 2
+  nenvs : 4
   cpu_envs: 4
   target_ent: 0.1
   batch: 4096
@@ -16,7 +16,7 @@ alg:
   num_gpus: 0
   pi : [256, 256, 256]
   vf : [256, 256, 256]
-  timesteps: 3000
+  timesteps: 5000
   checkpoint_freq: 250
   minibatch_size: 512
   num_epochs: 3
@@ -26,9 +26,9 @@ alg:
   vf_clip_param: 10.0
   grad_clip: 0.25
   pretrain:
-    enabled: false
-    episodes: 900
-    epochs: 28
+    enabled: true
+    episodes: 1200
+    epochs: 50
     batch_size: 1024
     lr: 0.0005
     value_loss_coef: 0.02
@@ -36,17 +36,20 @@ alg:
     eval_runs: 50
 
 env:
-  scenario: 4_drone_fire
+  scenario: fire_extinguish_env
   max_episode_length: 300 #MUST ALSO EDIT IN BUILDER AT BOTTOM OF ENV FILE
   agent_list: ['agent0', 'agent1', 'agent2', 'agent3', 'target']
   learned_agent_list: ['agent0', 'agent1', 'agent2', 'agent3']
+  env_kwargs:
+    warm_up_steps: 25
   reward_kwargs:
-    pass_reward: 80.0
-    target_steal_penalty: -750.0
-    deviation_threshold: 0.1
-    deviation_scale: 0.5
+    green_scale: -1
+    lose_penalty: -500
+    extinguish_reward: 500
+    bc_scale: 0.5
   controller_kwargs:
-    dead_zone: 0.01
+    deadzone: 0.1
+
 
 sim:
   n: 3 #number of pursuit agents

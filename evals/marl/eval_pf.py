@@ -41,7 +41,7 @@ def eval(
         cfg,
         seed=cfg['seed'],
         wrap='pf',
-        render_mode=cfg['env']['render_mode'],
+        render_mode=cfg['env'].get('render_mode', None),
         belief_kwargs=belief_kwargs,
     )
 

@@ -76,7 +76,7 @@ def _find_latest_checkpoint(logdir: str) -> tuple[str | None, int]:
             continue
 
         training_iteration = _load_checkpoint_iteration(entry.path)
-        print(entry,training_iteration)
+
         if training_iteration is None:
             continue
 
