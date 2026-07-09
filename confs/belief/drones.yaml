@@ -1,0 +1,20 @@
+lr: 0.000001
+seed: 2
+if_cuda: True
+gamma: 0.5
+log_dir: 'logs/belief/'
+label: 'vae1_test5'
+train_batch: 256
+val_batch: 256
+test_batch: 256
+num_workers: 15
+num_gpus: 1
+model_name: 'drones_VAE_NN'
+input_channels: 51
+output_channels: 12
+data_dir: 'data/'
+data_name: 'pp_bc_noisem_7n'
+lr_schedule: []
+epochs: 1000
+
+#everythin rel to adversary
