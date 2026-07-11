@@ -2,7 +2,7 @@ seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
 min_obs: 5
-logdir: /home/cameron/tells/logs/marl/drones_bc_newctrl2
+logdir: /home/cameron/tells/logs/marl/drones_oob
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 
@@ -11,8 +11,8 @@ alg:
   type : ppo
   lr : 0.00003
   gamma: 0.99
-  nenvs : 2
-  cpu_envs: 2
+  nenvs : 6
+  cpu_envs: 4
   target_ent: 0.1
   batch: 4096
   batch_size: 256
@@ -44,8 +44,8 @@ env:
   agent_list: ['agent0', 'agent1', 'agent2', 'target']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
   noise:
-    team: 0.7
-    target: 0.7
+    team: 0.3
+    target: 0.0
   env_kwargs:
     grid_size: 20
     num_goal_boxes: 5
@@ -74,7 +74,8 @@ env:
     max_altitude: 1.5
   reward_kwargs:
     protected_scale: 0
-    intruded_penatly: 1000
+    intruded_penalty: 1000
+    oob_penalty: 1000
     step_reward: 1
     bc_scale: 0.5
 

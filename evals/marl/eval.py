@@ -61,6 +61,7 @@ def eval(
         cfg,
         seed=cfg['seed'],
         wrap='rllib',
+        eval=True,
         render_mode='rgb_array',
         belief_kwargs=belief_kwargs,
     )
@@ -82,6 +83,7 @@ def eval(
 
     if collect_results:
         results_save_dir = os.path.join(checkpoint_dir,'results')
+        mkdir(results_save_dir)
     else:
         results_save_dir = None
 
@@ -210,7 +212,7 @@ def eval_single_episode(
             images.append(env.render_rgb())
 
         if results_save_dir is not None:
-            results[step_count] = [obs, rewards, terminations, truncations, infos]
+            results[str(step_count)] = [obs, rewards, terminations, truncations, infos]
 
     if save_video:
         save_file = str(os.path.join(save_dir,str(idx)+'.gif'))
@@ -218,7 +220,8 @@ def eval_single_episode(
         save_rgb_gif(images,save_file)
 
     if results_save_dir is not None:
-        save_path = str(os.path.join(save_dir,str(idx)+'.npz'))
+        results['obs_map'] = env.env.obs_map
+        save_path = str(os.path.join(results_save_dir,str(idx)+'.npz'))
         np.savez(save_path,**results)
 
     print("\n==== EVAL RESULTS ====")

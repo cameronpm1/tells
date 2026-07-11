@@ -1,7 +1,7 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/fire_longpre
+logdir: /home/cameron/tells/logs/marl/fire_tests
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 alg:
@@ -27,8 +27,8 @@ alg:
   grad_clip: 0.25
   pretrain:
     enabled: true
-    episodes: 1200
-    epochs: 50
+    episodes: 900
+    epochs: 28
     batch_size: 1024
     lr: 0.0005
     value_loss_coef: 0.02

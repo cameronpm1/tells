@@ -9,7 +9,7 @@ alg:
   type : ppo
   lr : 0.00003
   gamma: 0.99
-  nenvs : 2
+  nenvs : 6
   cpu_envs: 2
   target_ent: 0.1
   batch: 4096
@@ -72,7 +72,8 @@ env:
     max_altitude: 1.5
   reward_kwargs:
     protected_scale: 0
-    intruded_penatly: 1000
+    intruded_penalty: 1000
+    oob_penalty: 1000
     step_reward: 1
     bc_scale: 0.5
     belief_dev_scale: 0.0

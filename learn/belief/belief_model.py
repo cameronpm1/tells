@@ -245,7 +245,23 @@ class BeliefModel(pl.LightningModule):
             self.loss_func = self.model.loss #torch.nn.MSELoss()
             self.val_loss_func = self.model.val_loss
             self.vae = True
+        if self.hparams.model_name == 'football_NN':
+            self.model = football_NN(self.hparams.input_channels,self.hparams.output_channels)
+            self.loss_func = self.model.loss
+            self.val_loss_func = self.model.val_loss
+            self.vae = False
+        if self.hparams.model_name == 'football_VAE_NN':
+            self.model = football_VAE_NN(self.hparams.input_channels,self.hparams.output_channels)
+            self.loss_func = self.model.loss
+            self.val_loss_func = self.model.val_loss
+            self.vae = True
         
+    def sample_stochastic(self, x, sample_size=40):
+        inputs = x.repeat(sample_size,1)
+        output, mu, logvar = self.model(inputs,stochastic=True)
+
+        return output
+
 
     def train_forward(self, x):
         if self.vae:
@@ -292,9 +308,7 @@ class BeliefModel(pl.LightningModule):
         output, mu, logvar = self.train_forward(data)
 
         #avg_error = np.sum(np.linalg.norm(output.detach().cpu().numpy() - target.squeeze().detach().cpu().numpy(),axis=1))/len(data)
-        avg_error = self.val_loss_func.error(output.detach().cpu().numpy(), target.squeeze().detach().cpu().numpy()) / len(data)
         test_loss = self.val_loss_func(output,target.squeeze())
-        self.log('avg_error', avg_error, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         self.log('test_loss', test_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         self.all_predictions.extend(output.detach().cpu().numpy())
         self.all_ground_truths.extend(target.squeeze().detach().cpu().numpy())

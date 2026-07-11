@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 
 import torch
@@ -65,12 +67,52 @@ class NN2CNN(nn.Module):
 
 		return x
 
-class predator_prey_VAE_NN(nn.Module):
+class football_NN(nn.Module):
+
+	def __init__(self,
+                input_channels:int,
+                output_channels:int,
+				p_mc_dropout = 0.5) :
+
+		super().__init__()
+
+		self.loss = FootballMSE()
+		self.val_loss = FootballMSE()
+		
+		self.p_mc_dropout = p_mc_dropout
+
+		self.linear1 = nn.Linear(input_channels,512) 
+		self.linear2 = nn.Linear(512,1024) 
+		self.linear3 = nn.Linear(1024,4096)
+		#self.linear4 = nn.Linear(4096,4096)
+		#self.linear5 = nn.Linear(4096,4096)
+		#self.linear6 = nn.Linear(4096,4096)
+		self.linear6 = nn.Linear(4096,1024)
+		self.linear7 = nn.Linear(1024,64) 
+		self.linear8 = nn.Linear(64,output_channels) 
+		
+													
+		
+	def forward(self, x):
+
+		x = nn.functional.relu(self.linear1(x))
+		x = nn.functional.relu(self.linear2(x))
+		x = nn.functional.relu(self.linear3(x))
+		#x = nn.functional.relu(self.linear4(x))
+		#x = nn.functional.relu(self.linear5(x))
+		#x = nn.functional.relu(self.linear6(x))
+		x = nn.functional.relu(self.linear6(x))
+		x = nn.functional.relu(self.linear7(x))
+		x = self.linear8(x)
+
+		return x
+
+class football_VAE_NN(nn.Module):
 	def __init__(self, input_channels, output_channels, latent_dim=16):
 		super().__init__()
 
-		self.loss = PermutationInvariantVAEMSE()
-		self.val_loss = PermutationInvariantMSE()
+		self.loss = FootballVAEMSE()
+		self.val_loss = FootballMSE()
 
 		self.linear1 = nn.Linear(input_channels, 512)
 		self.linear2 = nn.Linear(512, 1024)
@@ -81,14 +123,42 @@ class predator_prey_VAE_NN(nn.Module):
 		self.vae = VAELayer(64, latent_dim)
 		self.decoder = nn.Linear(latent_dim, output_channels)
 
-	def forward(self, x):
+	def forward(self, x, stochastic=False):
 		x = nn.functional.relu(self.linear1(x))
 		x = nn.functional.relu(self.linear2(x))
 		x = nn.functional.relu(self.linear3(x))
 		x = nn.functional.relu(self.linear6(x))
 		x = nn.functional.relu(self.linear7(x))
 
-		z, mu, logvar = self.vae(x)
+		z, mu, logvar = self.vae(x, stochastic=stochastic)
+		pred = self.decoder(z)
+
+		return pred, mu, logvar
+
+class predator_prey_VAE_NN(nn.Module):
+	def __init__(self, input_channels, output_channels, latent_dim=16):
+		super().__init__()
+
+		self.loss = PredPreyPermutationInvariantVAEMSE()
+		self.val_loss = PredPreyPermutationInvariantMSE()
+
+		self.linear1 = nn.Linear(input_channels, 512)
+		self.linear2 = nn.Linear(512, 1024)
+		self.linear3 = nn.Linear(1024, 4096)
+		self.linear6 = nn.Linear(4096, 1024)
+		self.linear7 = nn.Linear(1024, 64)
+
+		self.vae = VAELayer(64, latent_dim)
+		self.decoder = nn.Linear(latent_dim, output_channels)
+
+	def forward(self, x, stochastic=False):
+		x = nn.functional.relu(self.linear1(x))
+		x = nn.functional.relu(self.linear2(x))
+		x = nn.functional.relu(self.linear3(x))
+		x = nn.functional.relu(self.linear6(x))
+		x = nn.functional.relu(self.linear7(x))
+
+		z, mu, logvar = self.vae(x, stochastic=stochastic)
 		pred = self.decoder(z)
 
 		return pred, mu, logvar
@@ -106,14 +176,14 @@ class drones_VAE_NN(nn.Module):
         self.vae = VAELayer(64, latent_dim)
         self.decoder = nn.Linear(latent_dim, output_channels)
 
-    def forward(self, x):
+    def forward(self, x, stochastic=False):
         x = nn.functional.relu(self.linear1(x))
         x = nn.functional.relu(self.linear2(x))
         x = nn.functional.relu(self.linear3(x))
         x = nn.functional.relu(self.linear6(x))
         x = nn.functional.relu(self.linear7(x))
 
-        z, mu, logvar = self.vae(x)
+        z, mu, logvar = self.vae(x, stochastic=stochastic)
         pred = self.decoder(z)
 
         return pred, mu, logvar
@@ -127,8 +197,8 @@ class predator_prey_NN(nn.Module):
 		
 		super().__init__()
 
-		self.loss = PermutationInvariantMSE()
-		self.val_loss = PermutationInvariantMSE()
+		self.loss = PredPreyPermutationInvariantMSE()
+		self.val_loss = PredPreyPermutationInvariantMSE()
 		
 		self.p_mc_dropout = p_mc_dropout
 
@@ -144,7 +214,7 @@ class predator_prey_NN(nn.Module):
 		
 													
 		
-	def forward(self, x, stochastic=True):
+	def forward(self, x):
 
 		x = nn.functional.relu(self.linear1(x))
 		x = nn.functional.relu(self.linear2(x))
@@ -158,88 +228,59 @@ class predator_prey_NN(nn.Module):
 
 		return x 
 
-class PermutationInvariantMSE(nn.Module):
+class PredPreyPermutationInvariantMSE(nn.Module):
 
-	def __init__(self):
+	def __init__(
+			self,
+		):
 		super().__init__()
 
 	def forward(self, pred, target):
-
-		l1 = self.permutation_invariant_loss(pred[:,0:4], target[:,0:4])
-		l2 = self.permutation_invariant_loss(pred[:,4:8], target[:,4:8])
-		return l1 + l2
+		return self.permutation_invariant_loss(pred, target)
 
 	def permutation_invariant_loss(self, pred, target):
 		"""
-		pred:   (batch, 4)
-		target: (batch, 4)
+		pred:   (batch, num_frames * 2 * dim)
+		target: (batch, num_frames * 2 * dim)
 		"""
+		# one shared direct/swapped teammate assignment across all
+		# time frames, so slot identity is consistent between the
+		# previous and current state estimates
+		num_frames = pred.shape[1] // 4
 
-		# reshape to (batch, 2, 3)
-		pred = pred.view(-1, 2, 2)
-		target = target.view(-1, 2, 2)
+		pred = pred.view(-1, num_frames, 2, 2)
+		target = target.view(-1, num_frames, 2, 2)
 
 		# direct assignment
-		loss1 = ((pred - target) ** 2).mean(dim=2).sum(dim=1)
+		loss1 = ((pred - target) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
 
 		# swapped assignment
-		loss2 = ((pred - target.flip(1)) ** 2).mean(dim=2).sum(dim=1)
+		loss2 = ((pred - target.flip(2)) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
 
 		# take minimum per sample
 		loss = torch.min(loss1, loss2)
 
 		return loss.mean()
 
-	def error(self, pred, target):
-		"""
-		pred:   (N, 6)
-		target: (N, 6)
 
-		Returns:
-			scalar, sum over batch of minimum assignment distances
-		"""
-		e1 = self.two_by_two_error(pred[:,0:4].cpu().numpy(), target[:,0:4].cpu().numpy())
-		e2 = self.two_by_two_error(pred[:,4:8].cpu().numpy(), target[:,4:8].cpu().numpy())
-		return e1 + e2
+class PredPreyPermutationInvariantVAEMSE(nn.Module):
 
-	def two_by_two_error(self, pred, target):
-
-		# Reshape to (N, 2, 3)
-		pred = pred.reshape(-1, 2, 2)
-		target = target.reshape(-1, 2, 2)
-
-		# Direct assignment distances
-		direct = (
-			np.linalg.norm(pred[:, 0] - target[:, 0], axis=1) +
-			np.linalg.norm(pred[:, 1] - target[:, 1], axis=1)
-		)
-
-		# Swapped assignment distances
-		swapped = (
-			np.linalg.norm(pred[:, 0] - target[:, 1], axis=1) +
-			np.linalg.norm(pred[:, 1] - target[:, 0], axis=1)
-		)
-
-		# Take minimum per sample, then sum batch
-		return np.minimum(direct, swapped).sum()
-
-
-class PermutationInvariantVAEMSE(nn.Module):
-
-	def __init__(self):
+	def __init__(
+			self,
+		):
 		super().__init__()
 
-	def forward(self, pred, target, mu, logvar, beta_kl=1e-2,):
+	def forward(self, pred, target, mu, logvar, beta_kl=1):
 
 		kl_loss = -0.5 * torch.sum(
 			1 + logvar - mu.pow(2) - logvar.exp(),
 			dim=1
 		)
 		kl_loss = kl_loss.mean() * beta_kl
-		
-		l1 = self.permutation_invariant_loss(pred[:,0:4], target[:,0:4])
-		l2 = self.permutation_invariant_loss(pred[:,4:8], target[:,4:8])
-		return l1 + l2 + kl_loss, kl_loss #kl1+kl2
+
+		total_loss = kl_loss + self.permutation_invariant_loss(pred, target)
+
+		return total_loss, kl_loss #kl1+kl2
 
 	def permutation_invariant_loss(
 		self,
@@ -247,50 +288,217 @@ class PermutationInvariantVAEMSE(nn.Module):
 		target,
 		return_parts=False,
 	):
+		# one shared direct/swapped teammate assignment across all
+		# time frames, so slot identity is consistent between the
+		# previous and current state estimates
+		num_frames = recon.shape[1] // 4
 
-		recon = recon.view(-1, 2, 2)
-		target = target.view(-1, 2, 2)
+		recon = recon.view(-1, num_frames, 2, 2)
+		target = target.view(-1, num_frames, 2, 2)
 
-		mse_direct = ((recon - target) ** 2).mean(dim=2).sum(dim=1)
-		mse_swapped = ((recon - target.flip(1)) ** 2).mean(dim=2).sum(dim=1)
+		mse_direct = ((recon - target) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+		mse_swapped = ((recon - target.flip(2)) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
 
 		recon_loss = torch.min(mse_direct, mse_swapped)
 
 		return recon_loss.mean()
 
-	def error(self, pred, target):
+class DronesPermutationInvariantMSE(nn.Module):
+
+	def __init__(
+			self,
+		):
+		super().__init__()
+
+	def forward(self, pred, target):
+		return self.permutation_invariant_loss(pred, target)
+
+	def permutation_invariant_loss(self, pred, target):
 		"""
-		pred:   (N, 6)
-		target: (N, 6)
-
-		Returns:
-			scalar, sum over batch of minimum assignment distances
+		pred:   (batch, num_frames * 2 * dim)
+		target: (batch, num_frames * 2 * dim)
 		"""
-		e1 = self.two_by_two_error(pred[:,0:4].cpu().numpy(), target[:,0:4].cpu().numpy())
-		e2 = self.two_by_two_error(pred[:,4:8].cpu().numpy(), target[:,4:8].cpu().numpy())
-		return e1 + e2
+		# one shared direct/swapped teammate assignment across all
+		# time frames, so slot identity is consistent between the
+		# previous and current state estimates
+		num_frames = pred.shape[1] // 6
 
-	def two_by_two_error(self, pred, target):
+		pred = pred.view(-1, num_frames, 2, 3)
+		target = target.view(-1, num_frames, 2, 3)
 
-		# Reshape to (N, 2, 3)
-		pred = pred.reshape(-1, 2, 2)
-		target = target.reshape(-1, 2, 2)
+		# direct assignment
+		loss1 = ((pred - target) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
 
-		# Direct assignment distances
-		direct = (
-			np.linalg.norm(pred[:, 0] - target[:, 0], axis=1) +
-			np.linalg.norm(pred[:, 1] - target[:, 1], axis=1)
+		# swapped assignment
+		loss2 = ((pred - target.flip(2)) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+
+		# take minimum per sample
+		loss = torch.min(loss1, loss2)
+
+		return loss.mean()
+
+
+class DronesPermutationInvariantVAEMSE(nn.Module):
+
+	def __init__(
+			self,
+		):
+		super().__init__()
+
+	def forward(self, pred, target, mu, logvar, beta_kl=1):
+
+		kl_loss = -0.5 * torch.sum(
+			1 + logvar - mu.pow(2) - logvar.exp(),
+			dim=1
+		)
+		kl_loss = kl_loss.mean() * beta_kl
+
+		total_loss = kl_loss + self.permutation_invariant_loss(pred, target)
+
+		return total_loss, kl_loss #kl1+kl2
+
+	def permutation_invariant_loss(
+		self,
+		recon,
+		target,
+		return_parts=False,
+	):
+		# one shared direct/swapped teammate assignment across all
+		# time frames, so slot identity is consistent between the
+		# previous and current state estimates
+		num_frames = recon.shape[1] // 6
+
+		recon = recon.view(-1, num_frames, 2, 3)
+		target = target.view(-1, num_frames, 2, 3)
+
+		mse_direct = ((recon - target) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+		mse_swapped = ((recon - target.flip(2)) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+
+		recon_loss = torch.min(mse_direct, mse_swapped)
+
+		return recon_loss.mean()
+
+class FootballPermutationInvariantMSE(nn.Module):
+
+	def __init__(
+			self,
+		):
+		super().__init__()
+
+		perms = list(itertools.permutations(range(4)))
+		self.register_buffer('team_perms', torch.tensor(perms), persistent=False)
+
+	def forward(self, pred, target):
+		return self.permutation_invariant_loss(pred, target)
+
+	def permutation_invariant_loss(self, pred, target):
+		"""
+		pred:   (batch, 2 * (4 * 2 + 6))
+		target: (batch, 2 * (4 * 2 + 6))
+
+		layout: [team_prev, ball_prev, team_curr, ball_curr]
+		"""
+		team_size = 4 * 2
+		ball_size = 6
+
+		team_prev_pred, ball_prev_pred, team_curr_pred, ball_curr_pred = torch.split(
+			pred, [team_size, ball_size, team_size, ball_size], dim=1
+		)
+		team_prev_tgt, ball_prev_tgt, team_curr_tgt, ball_curr_tgt = torch.split(
+			target, [team_size, ball_size, team_size, ball_size], dim=1
 		)
 
-		# Swapped assignment distances
-		swapped = (
-			np.linalg.norm(pred[:, 0] - target[:, 1], axis=1) +
-			np.linalg.norm(pred[:, 1] - target[:, 0], axis=1)
+		team_prev_pred = team_prev_pred.view(-1, 4, 2)
+		team_curr_pred = team_curr_pred.view(-1, 4, 2)
+		team_prev_tgt = team_prev_tgt.view(-1, 4, 2)
+		team_curr_tgt = team_curr_tgt.view(-1, 4, 2)
+
+		# one shared teammate permutation across both states, so slot
+		# identity is consistent between the previous and current estimates
+		best_team_loss = None
+		for perm in self.team_perms:
+			prev_loss = ((team_prev_pred[:, perm] - team_prev_tgt) ** 2).mean(dim=2).sum(dim=1)
+			curr_loss = ((team_curr_pred[:, perm] - team_curr_tgt) ** 2).mean(dim=2).sum(dim=1)
+			combined_loss = prev_loss + curr_loss
+
+			if best_team_loss is None:
+				best_team_loss = combined_loss
+			else:
+				best_team_loss = torch.minimum(best_team_loss, combined_loss)
+
+		team_loss = best_team_loss.mean()
+
+		ball_loss = (
+			self._ball_cross_entropy(ball_prev_pred, ball_prev_tgt)
+			+ self._ball_cross_entropy(ball_curr_pred, ball_curr_tgt)
 		)
 
-		# Take minimum per sample, then sum batch
-		return np.minimum(direct, swapped).sum()
+		return team_loss + ball_loss
 
+	def _ball_cross_entropy(self, pred_logits, target_onehot):
+		target_idx = target_onehot.argmax(dim=1)
+		return F.cross_entropy(pred_logits, target_idx)
+
+class FootballMSE(nn.Module):
+
+	def __init__(
+			self,
+		):
+		super().__init__()
+
+	def forward(self, pred, target):
+		return self.loss(pred, target)
+
+	def loss(self, pred, target):
+		"""
+		pred:   (batch, 2 * (4 * 2 + 6))
+		target: (batch, 2 * (4 * 2 + 6))
+
+		layout: [team_prev, ball_prev, team_curr, ball_curr]
+		"""
+		team_size = 4 * 2
+		ball_size = 6
+
+		team_prev_pred, ball_prev_pred, team_curr_pred, ball_curr_pred = torch.split(
+			pred, [team_size, ball_size, team_size, ball_size], dim=1
+		)
+		team_prev_tgt, ball_prev_tgt, team_curr_tgt, ball_curr_tgt = torch.split(
+			target, [team_size, ball_size, team_size, ball_size], dim=1
+		)
+
+		team_loss = F.mse_loss(team_prev_pred, team_prev_tgt) + F.mse_loss(team_curr_pred, team_curr_tgt)
+
+		ball_loss = (
+			self._ball_cross_entropy(ball_prev_pred, ball_prev_tgt)
+			+ self._ball_cross_entropy(ball_curr_pred, ball_curr_tgt)
+		)
+
+		return team_loss + ball_loss
+
+	def _ball_cross_entropy(self, pred_logits, target_onehot):
+		target_idx = target_onehot.argmax(dim=1)
+		return F.cross_entropy(pred_logits, target_idx)
+
+class FootballVAEMSE(nn.Module):
+
+	def __init__(
+			self,
+		):
+		super().__init__()
+
+		self.reconstruction_loss = FootballMSE()
+
+	def forward(self, pred, target, mu, logvar, beta_kl=0.01):
+
+		kl_loss = -0.5 * torch.sum(
+			1 + logvar - mu.pow(2) - logvar.exp(),
+			dim=1
+		)
+		kl_loss = kl_loss.mean() * beta_kl
+
+		total_loss = kl_loss + self.reconstruction_loss(pred, target)
+
+		return total_loss, kl_loss
 
 class VAELayer(nn.Module):
     """

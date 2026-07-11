@@ -216,7 +216,7 @@ def make_football_env(
         env = RLLibWrapper(
             env=env,
             name='football',
-            obs_packaging_func=predator_prey_obs_packaging,
+            obs_packaging_func=football_obs_packaging,
             eval=eval,
             belief_kwargs=belief_kwargs
         )

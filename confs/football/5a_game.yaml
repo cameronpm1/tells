@@ -1,7 +1,8 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/football_newctrl
+min_obs: 10
+logdir: /home/cameron/tells/logs/marl/football_noise2
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 alg:
@@ -41,6 +42,9 @@ env:
   agent_list: ['agent0', 'agent1', 'agent2', 'agent3', 'agent4', 'target']
   learned_agent_list: ['agent0', 'agent1', 'agent2', 'agent3', 'agent4']
   belief: false
+  noise:
+    team: 0.05
+    target: 0.0
   reward_kwargs:
     pass_reward: 0.0
     target_steal_penalty: -750.0

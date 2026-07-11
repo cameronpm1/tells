@@ -118,7 +118,10 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
         env = make_marl_env(cfg, seed=int(cfg['seed']) + seed_offset, wrap=None)
         obs, _ = env.reset()
 
+        best_dist = float('inf')
+        max_hold = 0
         success = False
+        oob = False
         steps = 0
 
         for t in range(cfg['env']['max_episode_length']):
@@ -130,15 +133,14 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
                 action_dict[agent] = int(action)
 
             obs, _, terminations, truncations, infos = env.step(action_dict)
-            info = infos[cfg['env']['learned_agent_list'][0]]
 
+            info = infos['__common__'][cfg['env']['learned_agent_list'][0]]
             success = success or bool(info['success'])
             steps = t + 1
 
             if _episodes_done(terminations, truncations):
                 break
 
-        final_info = infos[cfg['env']['learned_agent_list'][0]]
         rows.append({
             'success': int(success),
             'steps': steps,
@@ -146,7 +148,7 @@ def _evaluate_shared_policy(algo, cfg: dict, runs: int = 20) -> dict[str, float]
 
     return _summarize_eval_rows(rows)
 
-def _collect_slot_controller_dataset(cfg: dict, episodes: int):
+def _collect_controller_dataset(cfg: dict, episodes: int):
     obs_buf = []
     act_buf = []
     ret_buf = []
@@ -159,22 +161,34 @@ def _collect_slot_controller_dataset(cfg: dict, episodes: int):
             seed=int(cfg['seed']) + episode_idx,
             wrap=None,
         )
-        obs, _ = env.reset()
+        obs, infos = env.reset()
         trajectory = []
 
-        for _ in range(cfg['env']['max_episode_length']):
-            expert_actions = compute_slot_actions(obs, env.obs_map)
+        for i in range(cfg['env']['max_episode_length']):
+
+
+            if 'predator_prey' in cfg['env']['scenario']:
+                expert_actions = compute_slot_actions(obs,env.unwrapped.obs_map)
+            elif 'drone' in cfg['env']['scenario']:
+                expert_actions = drone_controller(obs, env.unwrapped.obs_map, cfg['env'].get('controller_kwargs', {}))
+            elif 'football' in cfg['env']['scenario']:
+                expert_actions = compute_rondo_actions(obs,env.unwrapped.obs_map)
+            elif 'fire' in cfg['env']['scenario']:
+                expert_actions = extinguish_controller(infos['__common__']['decomposed_obs'])
+
             predator_obs = {
                 agent: np.asarray(obs[agent], dtype=np.float32).copy()
                 for agent in learned_agents
             }
             action_dict = {'target': 0, **expert_actions}
-            obs, rewards, terminations, truncations, _ = env.step(action_dict)
+            obs, rewards, terminations, truncations, infos = env.step(action_dict)
             team_reward = float(rewards[learned_agents[0]])
             trajectory.append((predator_obs, expert_actions, team_reward))
 
             if _episodes_done(terminations, truncations):
                 break
+        
+        env.close()
 
         discounted_returns = []
         ret = 0.0
@@ -215,7 +229,7 @@ def _maybe_pretrain_policy(algo, cfg: dict, logdir: str) -> bool:
     policy_id = cfg['policy_list'][0]
 
     print(f'Collecting {episodes} expert episodes from the slot controller...')
-    obs_arr, act_arr, ret_arr = _collect_slot_controller_dataset(cfg, episodes=episodes)
+    obs_arr, act_arr, ret_arr = _collect_controller_dataset(cfg, episodes=episodes)
     action_counts = {
         action: int((act_arr == action).sum())
         for action in range(int(algo.get_policy(policy_id).action_space.n))

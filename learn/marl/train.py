@@ -556,7 +556,6 @@ def make_ray_config(
     return algo_config
 
 def marl_policy_mapping_fn(agent_id, episode, **kwargs):
+    #return agent_id # for unique policy per agent
 
     return 'agent0' #for single policy, multiple agents
-
-    #return agent_id

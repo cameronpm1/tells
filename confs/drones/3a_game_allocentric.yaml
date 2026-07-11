@@ -74,7 +74,8 @@ env:
     max_altitude: 1.5
   reward_kwargs:
     protected_scale: 0
-    intruded_penatly: 1000
+    intruded_penalty: 1000
+    oob_penalty: 1000
     step_reward: 1
     bc_scale: 0.5
     belief_dev_scale: 0.5

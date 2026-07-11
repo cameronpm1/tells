@@ -476,6 +476,9 @@ class CaravanAviary(BaseRLAviary):
         if self._breached_box():
             reward -= self.reward_cfg.get('intruded_penalty', 1000)
 
+        if self._out_of_bounds():
+            reward -= self.reward_cfg.get('oob_penalty', 1000)
+
         reward_dict = {}
         for agent in self.agents:
             reward_dict[agent] = reward

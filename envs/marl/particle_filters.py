@@ -198,7 +198,7 @@ class ParticleCluster:
         """
         positions = np.array([p.position for p in self.particles])
         mean_pos = np.average(positions, axis=0, weights=self.weights)
-        return mean_pos, np.average(np.std(positions,axis=0)) #np.average(np.stdev(positions, axis=0))
+        return mean_pos, 1/np.max(np.std(positions,axis=0)) #np.average(np.stdev(positions, axis=0))
     
     def update_weights(self, measurement, measurement_std):
         """
@@ -358,7 +358,7 @@ class DronesParticleFilter(PredatorPreyParticleFilter):
         std_dev: float = 0.2,
         max_speed: float = 3.0,
         speed_ratio: float = 0.8,
-        dt: float = 0.0333
+        dt: float = 0.333
     ):
         super().__init__(
             obs_map,

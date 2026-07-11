@@ -442,7 +442,6 @@ class PredatorPreyScenario(BaseScenario):
         self.goal_spawn_min_radius = goal_spawn_min_radius
         self.goal_spawn_max_radius = goal_spawn_max_radius
         self.local_observations = False
-        self.noise = {}
 
     def make_world(self):
 
@@ -639,7 +638,6 @@ class PredatorPreyScenario(BaseScenario):
             else:
                 rel_positions.append(other.state.p_pos - pos)
 
-        self.noise[agent.name] = np.random.normal(0, 0.7, size=(len(rel_positions)*2,))
         obs['team'] = np.array(rel_positions).flatten()
         
         

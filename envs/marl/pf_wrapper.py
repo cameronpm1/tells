@@ -156,6 +156,7 @@ class PFWrapper(MultiAgentEnv):
                     self.switch_count[agent] += 1
             state_slice = slice(self.obs_map['target_pos'].start,self.obs_map['team'].stop)
             error = self.permutation_invariant_error(obs[agent][state_slice], new_obs[agent][state_slice])
+            
             errors.append(error)
             rew[agent] = rew[agent] - error * self.env.reward_cfg['belief_dev_scale']
 
@@ -247,7 +248,7 @@ class PFWrapper(MultiAgentEnv):
         # Take minimum per sample, then sum batch
         return np.minimum(direct, swapped).sum() + static
 
-    def render_rgb_pp(self, show: bool = False, window_name: str = "PredatorPrey"):
+    def render_rgb(self, show: bool = False, window_name: str = "PredatorPrey"):
         """
         Draw the predator-prey environment using self.obs, then overlay estimated
         other-agent locations from self.new_obs with semi-transparent markers.
@@ -489,7 +490,7 @@ class PFWrapper(MultiAgentEnv):
 
         return frame
 
-    def render_rgb(self, show: bool = False, window_name: str = "DroneEnv"):
+    def render_rgb_drones(self, show: bool = False, window_name: str = "DroneEnv"):
         """
         Custom 2D top-down RGB renderer.
 

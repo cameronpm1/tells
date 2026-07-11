@@ -458,6 +458,7 @@ class DroneFireSim:
         extinguish_count = 0
 
         for drone in self.drone_names:
+
             discrete_action = int(actions[drone])
             vec_action = self.ACTION_LIBRARY[discrete_action]
 

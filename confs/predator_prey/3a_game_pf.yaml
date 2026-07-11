@@ -2,7 +2,7 @@ seed: &seed 24 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
 min_obs: 10
-logdir: logs/marl/ppo_pf
+logdir: logs/marl/predator_prey_pf
 notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 alg:
@@ -46,7 +46,7 @@ env:
   render_mode: rgb_array
   noise:
     team: 0.7
-    target: 0.1
+    target: 0.0
   scenario_kwargs:
     base_speed: 1.2
     speed_ratio: 0.35
@@ -87,7 +87,7 @@ env:
     belief_dev_scale: 0.1
   belief_kwargs:
     max_speed: 1.1
-    speed_ratio: 0.4
+    speed_ratio: 0.35
 
 sim:
   n: 3 #number of pursuit agents
