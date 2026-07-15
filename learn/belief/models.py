@@ -76,34 +76,26 @@ class football_NN(nn.Module):
 
 		super().__init__()
 
-		self.loss = FootballMSE()
-		self.val_loss = FootballMSE()
-		
+		self.loss = nn.MSELoss()
+		self.val_loss = nn.MSELoss()
+
 		self.p_mc_dropout = p_mc_dropout
 
-		self.linear1 = nn.Linear(input_channels,512) 
-		self.linear2 = nn.Linear(512,1024) 
-		self.linear3 = nn.Linear(1024,4096)
-		#self.linear4 = nn.Linear(4096,4096)
-		#self.linear5 = nn.Linear(4096,4096)
-		#self.linear6 = nn.Linear(4096,4096)
-		self.linear6 = nn.Linear(4096,1024)
-		self.linear7 = nn.Linear(1024,64) 
-		self.linear8 = nn.Linear(64,output_channels) 
-		
-													
-		
+		self.linear1 = nn.Linear(input_channels,128)
+		self.linear2 = nn.Linear(128,256)
+		self.linear3 = nn.Linear(256,128)
+		self.linear4 = nn.Linear(128,64)
+		self.linear5 = nn.Linear(64,output_channels)
+
+
+
 	def forward(self, x):
 
 		x = nn.functional.relu(self.linear1(x))
 		x = nn.functional.relu(self.linear2(x))
 		x = nn.functional.relu(self.linear3(x))
-		#x = nn.functional.relu(self.linear4(x))
-		#x = nn.functional.relu(self.linear5(x))
-		#x = nn.functional.relu(self.linear6(x))
-		x = nn.functional.relu(self.linear6(x))
-		x = nn.functional.relu(self.linear7(x))
-		x = self.linear8(x)
+		x = nn.functional.relu(self.linear4(x))
+		x = self.linear5(x)
 
 		return x
 
@@ -199,34 +191,26 @@ class predator_prey_NN(nn.Module):
 
 		self.loss = PredPreyPermutationInvariantMSE()
 		self.val_loss = PredPreyPermutationInvariantMSE()
-		
+
 		self.p_mc_dropout = p_mc_dropout
 
-		self.linear1 = nn.Linear(input_channels,512) 
-		self.linear2 = nn.Linear(512,1024) 
-		self.linear3 = nn.Linear(1024,4096)
-		#self.linear4 = nn.Linear(4096,4096)
-		#self.linear5 = nn.Linear(4096,4096)
-		#self.linear6 = nn.Linear(4096,4096)
-		self.linear6 = nn.Linear(4096,1024)
-		self.linear7 = nn.Linear(1024,64) 
-		self.linear8 = nn.Linear(64,output_channels) 
-		
-													
-		
+		self.linear1 = nn.Linear(input_channels,128)
+		self.linear2 = nn.Linear(128,256)
+		self.linear3 = nn.Linear(256,128)
+		self.linear4 = nn.Linear(128,64)
+		self.linear5 = nn.Linear(64,output_channels)
+
+
+
 	def forward(self, x):
 
 		x = nn.functional.relu(self.linear1(x))
 		x = nn.functional.relu(self.linear2(x))
 		x = nn.functional.relu(self.linear3(x))
-		#x = nn.functional.relu(self.linear4(x))
-		#x = nn.functional.relu(self.linear5(x))
-		#x = nn.functional.relu(self.linear6(x))
-		x = nn.functional.relu(self.linear6(x))
-		x = nn.functional.relu(self.linear7(x))
-		x = self.linear8(x)
+		x = nn.functional.relu(self.linear4(x))
+		x = self.linear5(x)
 
-		return x 
+		return x
 
 class PredPreyPermutationInvariantMSE(nn.Module):
 
@@ -451,13 +435,26 @@ class FootballMSE(nn.Module):
 
 	def loss(self, pred, target):
 		"""
-		pred:   (batch, 2 * (4 * 2 + 6))
-		target: (batch, 2 * (4 * 2 + 6))
+		pred:   (batch, 2 * (4 * 2 + 6)), (batch, 4 * 2 + 6), or (batch, 4 * 2)
+		target: matches pred
 
-		layout: [team_prev, ball_prev, team_curr, ball_curr]
+		layout: [team_prev, ball_prev, team_curr, ball_curr], [team_curr, ball_curr],
+		or just team_curr when only the current team observation is provided
 		"""
 		team_size = 4 * 2
 		ball_size = 6
+
+		if pred.shape[1] == team_size:
+			return F.mse_loss(pred, target)
+
+		if pred.shape[1] == team_size + ball_size:
+			team_curr_pred, ball_curr_pred = torch.split(pred, [team_size, ball_size], dim=1)
+			team_curr_tgt, ball_curr_tgt = torch.split(target, [team_size, ball_size], dim=1)
+
+			team_loss = F.mse_loss(team_curr_pred, team_curr_tgt)
+			ball_loss = self._ball_cross_entropy(ball_curr_pred, ball_curr_tgt)
+
+			return team_loss + ball_loss
 
 		team_prev_pred, ball_prev_pred, team_curr_pred, ball_curr_pred = torch.split(
 			pred, [team_size, ball_size, team_size, ball_size], dim=1
