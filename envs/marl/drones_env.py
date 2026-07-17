@@ -454,6 +454,31 @@ class CaravanAviary(BaseRLAviary):
             'controller_action_reward': controller_action_match,
         }
     
+    def _compute_spacing_reward(self):
+        """
+        Score how evenly protectors are spaced along the goal line: order them
+        by position projected onto the box-line axis, then map the coefficient
+        of variation of the (Euclidean) neighbor-to-neighbor distances to
+        (0, 1], 1 being even. Zeroed out entirely if any neighbor pair is
+        closer than min_spacing_dist.
+        """
+        if self.n_agents < 2:
+            return 0.0
+
+        axis = self.box_state[-1, 0:2] - self.box_state[0, 0:2]
+        axis = axis / max(np.linalg.norm(axis), 1e-6)
+
+        protector_pos = self._get_team_state()[: self.n_agents, 0:3]
+        ordered_pos = protector_pos[np.argsort(protector_pos[:, 0:2] @ axis)]
+        neighbor_dists = np.linalg.norm(np.diff(ordered_pos, axis=0), axis=-1)
+
+        if neighbor_dists.min() < self.reward_cfg.get('min_spacing_dist', 0.6):
+            return 0.0
+
+        mean_gap = np.mean(neighbor_dists)
+
+        return float(np.exp(-np.std(neighbor_dists) / mean_gap)) if mean_gap > 1e-6 else 0.0
+
     def _computeReward(self):
         """
         Shared team reward.
@@ -472,6 +497,8 @@ class CaravanAviary(BaseRLAviary):
         reward = np.sum(protected) * self.reward_cfg.get('protected_scale', 1)
 
         reward += self.controller_metrics['controller_action_reward'] * self.reward_cfg['bc_scale']
+
+        reward += self._compute_spacing_reward() * self.reward_cfg.get('spacing_scale', 0.0)
 
         if self._breached_box():
             reward -= self.reward_cfg.get('intruded_penalty', 1000)
@@ -565,7 +592,7 @@ class CaravanAviary(BaseRLAviary):
         return False
 
     def _sample_initial_xyzs(self, rng):
-        spawn_radius = 1.0
+        spawn_radius = 2.0
         xyzs = np.zeros((self.n_agents + 1, 3), dtype=np.float32)
 
         min_goal_x = float(np.min(self.box_state[:, 0])) + 1.0
@@ -588,8 +615,11 @@ class CaravanAviary(BaseRLAviary):
         else:
             assigned_goals = np.arange(self.n_agents) % self.num_goal_boxes
 
-        box_idx = int(rng.integers(0, self.num_goal_boxes))
-        box_center = self.box_state[box_idx, 0:3].astype(np.float32)
+        spawn_x = rng.uniform(self.box_state[1, 0], self.box_state[2, 0])
+        box_center = np.array(
+            [spawn_x, self.box_state[1, 1], self.box_state[1, 2]],
+            dtype=np.float32,
+        )
 
         for i in range(self.n_agents):
             angle = rng.uniform(-np.pi, np.pi)

@@ -389,6 +389,26 @@ def train(config_path: str, kwargs=None):
     _save_checkpoint(algo_build, save_dir)
 
 
+def _square_image_conv_filters(size: int, channels=(16, 32, 64)):
+    '''
+    builds a conv_filters stack that collapses a (size, size, C) image
+    down to 1x1 spatial dims, as required by rllib's VisionNetwork
+    '''
+    filters = []
+    dim = size
+    idx = 0
+
+    while dim > 4:
+        out_channels = channels[min(idx, len(channels) - 1)]
+        filters.append([out_channels, [3, 3], 2])
+        dim = -(-dim // 2)  # ceil division, matches rllib's "same" padding
+        idx += 1
+
+    filters.append([channels[-1] * 2, [dim, dim], 1])
+
+    return filters
+
+
 def make_ray_config(
     cfg: dict,
     wrapper: Optional[str] = 'rllib',
@@ -496,9 +516,18 @@ def make_ray_config(
         }
     elif 'ppo' in cfg['alg']['type']:
         algo = PPOConfig()
-        model_dict = {
-            'fcnet_hiddens': cfg['alg']['pi'],
-        }
+        obs_space = test_env.get_observation_space(policy_list[0])
+
+        if len(obs_space.shape) == 3:
+            model_dict = {
+                'conv_filters': _square_image_conv_filters(obs_space.shape[0]),
+                'post_fcnet_hiddens': cfg['alg']['pi'],
+            }
+        else:
+            model_dict = {
+                'fcnet_hiddens': cfg['alg']['pi'],
+            }
+
         batch = cfg['alg']['batch']
 
         policy_info = {}

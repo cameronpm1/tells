@@ -122,6 +122,8 @@ class CirclePass5v1Env(gym.Env):
             9: 11,   # long_pass
             10: 13,
         }
+        ball_owner_end = 10 + 2 * (len(self.agents) - 1) + len(self.agents) + 1
+
         self.obs_map = {
             'self': slice(0, 4),
             'target': slice(4, 10),
@@ -130,12 +132,13 @@ class CirclePass5v1Env(gym.Env):
             'self_pos': slice(2, 4),
             'self_vel': slice(0, 2),
             'self_anchor': slice(4, 6),
-            'ball_owner': slice(10 + 2 * (len(self.agents) - 1), 10 + 2 * (len(self.agents) - 1) + len(self.agents) + 1),
+            'ball_owner': slice(10 + 2 * (len(self.agents) - 1), ball_owner_end),
+            'ball_pos': slice(ball_owner_end, ball_owner_end + 2),
             'target_ball': slice(4, 6),
             'target_pos': slice(6, 8),
             'target_vel': slice(8, 10),
             'target_ball_owned' : slice(10 + 2 * (len(self.agents)), 10 + 2 * (len(self.agents)) + 1),
-            'state_space':(24,),
+            'state_space':(ball_owner_end + 2,),
         }
 
     def _init_scenario(self, scenario_name, render):
@@ -190,9 +193,10 @@ class CirclePass5v1Env(gym.Env):
         for agent in self.agents:
             actions.append(actions_dict[agent])
         controller_metrics = self.behavior_cloning_reward(actions_dict)
-        if self._step == 1:
-            #adversary_action = 0
+        if self._step == 1 and self.controller_kwargs['fast']:
             adversary_action = 10 #turn on sprint 
+        elif self._step == 1:
+            adversary_action = 0
         else:
             adversary_action = self.adversary_controller(self.obs['target'],self.obs_map,self.controller_kwargs)
         actions = np.concatenate(([0],actions,[0,adversary_action]))
@@ -227,6 +231,7 @@ class CirclePass5v1Env(gym.Env):
 
         new_obs = {}
         ball_owner = None
+        ball_pos_by_agent = {}
         for i,agent_obs in enumerate(obs):
             if i < self.n_agents:
                 agent_name = self.agents[i]
@@ -242,6 +247,8 @@ class CirclePass5v1Env(gym.Env):
                     ball_owner = i
                 elif np.linalg.norm(agent_obs['ball'][0:2] - pos) < 0.03 and np.linalg.norm(agent_obs['ball_direction']) < 0.001:
                     ball_owner = i
+
+                ball_pos_by_agent[agent_name] = agent_obs['ball'][0:2] - pos
 
                 ball = deepcopy(AGENT_ANCHORS[i])
 
@@ -279,7 +286,7 @@ class CirclePass5v1Env(gym.Env):
             ball_owner_array = np.zeros((len(self.agents) + 1))
             if ball_owner is not None:
                 ball_owner_array[ball_owner] = 1
-            new_obs[agent_name] = np.concatenate((new_obs[agent_name],ball_owner_array))
+            new_obs[agent_name] = np.concatenate((new_obs[agent_name],ball_owner_array,ball_pos_by_agent[agent_name]))
 
 
         return new_obs

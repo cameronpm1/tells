@@ -31,6 +31,41 @@ def action_to_vec(action: int) -> int:
 
     return directions[action][0]
 
+def get_ball_owner(
+    team_rel_pos,
+    ball_rel_pos,
+    agent_name: str,
+    distance_threshold: float = 0.05,
+) -> np.ndarray:
+    '''
+    team_rel_pos:  positions of the observing agent's teammates, relative to
+                    the observing agent (matches obs_map['team'])
+    ball_rel_pos:  position of the ball relative to the observing agent
+    agent_name:    name of the observing agent, e.g. 'agent2'
+
+    returns a one-hot array over the observing agent's team (self + teammates)
+    marking whoever is closest to the ball, or all zeros if nobody is within
+    distance_threshold of the ball
+    '''
+    team_rel_pos = np.asarray(team_rel_pos).reshape(-1, 2)
+    ball_rel_pos = np.asarray(ball_rel_pos)
+
+    n_agents = len(team_rel_pos) + 1
+    self_idx = int(''.join(c for c in agent_name if c.isdigit()))
+    teammate_idxs = [j for j in range(n_agents) if j != self_idx]
+
+    dists = {self_idx: np.linalg.norm(ball_rel_pos)}
+    for idx, team_pos in zip(teammate_idxs, team_rel_pos):
+        dists[idx] = np.linalg.norm(team_pos - ball_rel_pos)
+
+    closest_idx = min(dists, key=dists.get)
+
+    ball_owner = np.zeros(n_agents)
+    if dists[closest_idx] <= distance_threshold:
+        ball_owner[closest_idx] = 1
+
+    return ball_owner
+
 def compute_target_aim(
     agent_obs,
     obs_map,

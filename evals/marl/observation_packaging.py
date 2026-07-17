@@ -2,6 +2,8 @@ import numpy as np
 from copy import deepcopy
 from typing import Optional
 
+from controllers.football_control import get_ball_owner
+
 def football_obs_packaging(
         obs_history, 
         obs_map, 
@@ -34,37 +36,30 @@ def football_obs_packaging(
                 allocentric_obs.append(obs_ts)
 
         team_obs = obs_history[-1][agent][obs_map['team']]
-        ball_obs = obs_history[-1][agent][obs_map['ball_owner']]
+        ball_pos_obs = obs_history[-1][agent][obs_map['ball_pos']]
         if len(obs_history) > 1:
             last_team_obs = obs_history[-2][agent][obs_map['team']]
             last_team_obs = last_team_obs + np.tile(obs_history[-2][agent][obs_map['self_pos']],len(last_team_obs)//2)
             last_team_obs = last_team_obs - np.tile(obs_history[-1][agent][obs_map['self_pos']],len(last_team_obs)//2)
-            last_ball_obs = obs_history[-2][agent][obs_map['ball_owner']]
         else:
             last_team_obs = deepcopy(team_obs)
-            last_ball_obs = ball_obs
 
         if noise is not None and agent in noise:
             team_noise = noise[agent]['team']
             team_noise_old = noise[agent]['team_old']
+            ball_noise = noise[agent].get('ball', np.zeros_like(ball_pos_obs))
         else:
             team_noise = np.zeros_like(team_obs)
             team_noise_old = np.zeros_like(last_team_obs)
+            ball_noise = np.zeros_like(ball_pos_obs)
 
         data_point = {}
-        data_point['input'] = np.concatenate((allocentric_obs,last_team_obs,last_ball_obs))
-        data_point['label'] = np.concatenate((last_team_obs - team_noise_old,last_ball_obs,team_obs - team_noise,ball_obs))
+        data_point['input'] = np.concatenate((allocentric_obs,last_team_obs,ball_pos_obs))
+        data_point['label'] = np.concatenate((last_team_obs - team_noise_old,team_obs - team_noise,ball_pos_obs - ball_noise))
 
         obs_dict[agent] = data_point
 
-    team_start = len(last_team_obs) + len(last_ball_obs)
-    ball_start = team_start + len(team_obs)
-    obs_idxs = {
-        'team': slice(team_start, team_start + len(team_obs)),
-        'ball_owner': slice(ball_start, ball_start + len(ball_obs)),
-    }
-
-    return obs_dict, obs_idxs
+    return obs_dict, _transform_football_pred
 
 def drones_obs_packaging(
         obs_history, 
@@ -176,6 +171,28 @@ def predator_prey_obs_packaging(
 
         obs_dict[agent] = data_point
 
-    obs_idxs = {'team': slice(len(last_team_obs), len(last_team_obs) + len(team_obs))}
+    return obs_dict, _transform_predator_prey_pred
 
-    return obs_dict, obs_idxs
+
+def _transform_predator_prey_pred(obs, obs_map, agent, prediction):
+
+    obs[agent][obs_map['team']] = prediction[4:]
+
+    return obs
+
+def _transform_football_pred(obs, obs_map, agent, prediction):
+
+    team_size = obs_map['team'].stop - obs_map['team'].start
+
+    team_curr_pred = prediction[team_size:2 * team_size]
+    ball_pos_pred = prediction[2 * team_size:]
+
+    obs[agent][obs_map['team']] = team_curr_pred
+    obs[agent][obs_map['ball_pos']] = ball_pos_pred
+
+    agent_idx = list(obs.keys()).index(agent)
+    if obs[agent][obs_map['ball_owner']][agent_idx] != 1:
+        ball_owner = get_ball_owner(team_curr_pred, ball_pos_pred, agent)
+        obs[agent][obs_map['ball_owner']] = np.concatenate((ball_owner, np.zeros(1)))
+
+    return obs

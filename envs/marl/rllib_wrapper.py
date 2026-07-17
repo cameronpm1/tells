@@ -102,6 +102,10 @@ class RLLibWrapper(MultiAgentEnv):
                 self.temp_noise[agent] = {'team': team_noise, 'team_old': team_old, 'target': target_noise}
                 obs[agent][self.env.obs_map['team']] = obs[agent][self.env.obs_map['team']] + team_noise
                 obs[agent][self.env.obs_map['target_pos']] = obs[agent][self.env.obs_map['target_pos']] + target_noise
+                if 'football' in self.name:
+                    ball_noise = np.random.normal(0, self.noise['team'], size=self.dim,)
+                    self.temp_noise[agent]['ball'] = ball_noise
+                    obs[agent][self.env.obs_map['ball_pos']] = obs[agent][self.env.obs_map['ball_pos']] + ball_noise
 
         if self.belief:
             self.obs_history.append(deepcopy(obs))
@@ -110,7 +114,7 @@ class RLLibWrapper(MultiAgentEnv):
 
         #fill in observations
         if self.belief:
-            converted_obs, obs_idxs = self.obs_packaging_func(self.obs_history, self.env.obs_map, self.agents, min_obs=self.belief_n, noise=self.temp_noise)
+            converted_obs, transform_pred = self.obs_packaging_func(self.obs_history, self.env.obs_map, self.agents, min_obs=self.belief_n, noise=self.temp_noise)
             predictions = {}
             errors = []
 
@@ -126,10 +130,9 @@ class RLLibWrapper(MultiAgentEnv):
                     prediction = self.belief_model.model(model_input)
                 prediction = prediction.detach().cpu().numpy()
 
-                for label, idx_slice in obs_idxs.items():
-                    self.obs_history[-1][agent][self.env.obs_map[label]] = prediction[idx_slice]
+                self.obs_history[-1] = transform_pred(self.obs_history[-1],self.env.obs_map,agent,prediction)
 
-                team_state = prediction[obs_idxs['team']]
+                team_state = self.obs_history[-1][agent][self.env.obs_map['team']]
                 pred_t = torch.from_numpy(np.asarray(team_state, dtype=np.float32)).unsqueeze(0)
                 target_t = torch.from_numpy(np.asarray(agent_obs[self.env.obs_map['team']], dtype=np.float32)).unsqueeze(0)
                 if self.belief_model.vae:
@@ -160,15 +163,6 @@ class RLLibWrapper(MultiAgentEnv):
         infos['__common__']['raw_reward'] = 0.0
         infos['__common__']['obs_no_noise'] = deepcopy(obs)
         self.last_raw_reward = 0.0
-
-        if self.noise is not None and not self.belief:
-            self.temp_noise = {}
-            for agent in self.agents:
-                team_noise = np.random.normal(0, self.noise['team'], size=(self.n_agents-1)*self.dim,)
-                target_noise = np.random.normal(0, self.noise['target'], size=self.dim,)
-                self.temp_noise[agent] = {'team': team_noise, 'target': target_noise}
-                obs[agent][self.env.obs_map['team']] = obs[agent][self.env.obs_map['team']] + team_noise
-                obs[agent][self.env.obs_map['target_pos']] = obs[agent][self.env.obs_map['target_pos']] + target_noise
 
         if self.belief:
             self.obs_history = []

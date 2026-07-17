@@ -2,22 +2,22 @@ seed: &seed 23 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
 min_obs: 10
-logdir: logs/marl/predator_prey_back3
+logdir: logs/marl/predator_prey_fully_obs_long_no_grad
 notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 alg:
   type : ppo
   lr : 0.00003
   gamma: 0.99
-  nenvs : 2
-  cpu_envs: 4
+  nenvs : 4
+  cpu_envs: 2
   target_ent: 0.1
   batch: 4096
   batch_size: 256
   num_gpus: 0
   pi : [256, 256, 256]
   vf : [256, 256, 256]
-  timesteps: 5000
+  timesteps: 10000
   checkpoint_freq: 250
   minibatch_size: 512
   num_epochs: 3

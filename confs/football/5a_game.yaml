@@ -2,15 +2,15 @@ seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
 min_obs: 10
-logdir: /home/cameron/tells/logs/marl/football_noise2
+logdir: /home/cameron/tells/logs/marl/football_fully_obs_slow
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 alg:
   type : ppo
   lr : 0.00003
   gamma: 0.99
-  nenvs : 2
-  cpu_envs: 4
+  nenvs : 6
+  cpu_envs: 2
   target_ent: 0.1
   batch: 4096
   batch_size: 256
@@ -54,6 +54,7 @@ env:
     oob_penalty: -750
   controller_kwargs:
     dead_zone: 0.01
+    fast: true
 
 sim:
   n: 3 #number of pursuit agents

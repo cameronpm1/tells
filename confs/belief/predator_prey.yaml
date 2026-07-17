@@ -1,9 +1,9 @@
-lr: 0.000001
+lr: 0.00005
 seed: 2
 if_cuda: True
 gamma: 0.5
 log_dir: 'logs/belief/'
-label: '1'
+label: '0'
 train_batch: 256
 val_batch: 256
 test_batch: 256
@@ -14,7 +14,7 @@ input_channels: 44
 output_channels: 8
 data_dir: 'data/'
 data_name: 'predator_prey_fully_obs'
-lr_schedule: []
+lr_schedule: [200, 500, 1000, 2000, 3000]
 epochs: 4000
 
 #everythin rel to adversary

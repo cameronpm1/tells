@@ -8,8 +8,8 @@ alg:
   type : ppo
   lr : 0.00003
   gamma: 0.99
-  nenvs : 4
-  cpu_envs: 4
+  nenvs : 
+  cpu_envs: 2
   target_ent: 0.1
   batch: 4096
   batch_size: 256

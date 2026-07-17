@@ -1,20 +1,20 @@
-lr: 0.0000001
+lr: 0.0001
 seed: 2
 if_cuda: True
 gamma: 0.5
 log_dir: 'logs/belief/'
-label: '.01'
+label: '2'
 train_batch: 256
 val_batch: 256
 test_batch: 256
 num_workers: 15
 num_gpus: 1
-model_name: 'football_VAE_NN'
-input_channels: 52
-output_channels: 28
+model_name: 'football_NN'
+input_channels: 48
+output_channels: 18
 data_dir: 'data/'
-data_name: 'football_fully_obs'
-lr_schedule: []
+data_name: 'football_fully_obs_slow'
+lr_schedule: [200, 500, 1000, 2000, 3000]
 epochs: 4000
 
 #everythin rel to adversary

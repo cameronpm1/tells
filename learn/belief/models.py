@@ -227,22 +227,22 @@ class PredPreyPermutationInvariantMSE(nn.Module):
 		pred:   (batch, num_frames * 2 * dim)
 		target: (batch, num_frames * 2 * dim)
 		"""
-		# one shared direct/swapped teammate assignment across all
-		# time frames, so slot identity is consistent between the
-		# previous and current state estimates
+		# each time frame picks its own direct/swapped teammate
+		# assignment independently, so the previous and current
+		# state estimates don't have to agree on slot identity
 		num_frames = pred.shape[1] // 4
 
 		pred = pred.view(-1, num_frames, 2, 2)
 		target = target.view(-1, num_frames, 2, 2)
 
 		# direct assignment
-		loss1 = ((pred - target) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+		loss1 = ((pred - target) ** 2).mean(dim=3).sum(dim=2)
 
 		# swapped assignment
-		loss2 = ((pred - target.flip(2)) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+		loss2 = ((pred - target.flip(2)) ** 2).mean(dim=3).sum(dim=2)
 
-		# take minimum per sample
-		loss = torch.min(loss1, loss2)
+		# take minimum per frame, then sum across frames
+		loss = torch.min(loss1, loss2).sum(dim=1)
 
 		return loss.mean()
 
@@ -272,18 +272,18 @@ class PredPreyPermutationInvariantVAEMSE(nn.Module):
 		target,
 		return_parts=False,
 	):
-		# one shared direct/swapped teammate assignment across all
-		# time frames, so slot identity is consistent between the
-		# previous and current state estimates
+		# each time frame picks its own direct/swapped teammate
+		# assignment independently, so the previous and current
+		# state estimates don't have to agree on slot identity
 		num_frames = recon.shape[1] // 4
 
 		recon = recon.view(-1, num_frames, 2, 2)
 		target = target.view(-1, num_frames, 2, 2)
 
-		mse_direct = ((recon - target) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
-		mse_swapped = ((recon - target.flip(2)) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+		mse_direct = ((recon - target) ** 2).mean(dim=3).sum(dim=2)
+		mse_swapped = ((recon - target.flip(2)) ** 2).mean(dim=3).sum(dim=2)
 
-		recon_loss = torch.min(mse_direct, mse_swapped)
+		recon_loss = torch.min(mse_direct, mse_swapped).sum(dim=1)
 
 		return recon_loss.mean()
 

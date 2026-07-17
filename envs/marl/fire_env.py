@@ -67,7 +67,7 @@ class DroneFireEnv(gymnasium.Env):
         return spaces.Box(
             low=0,
             high=4,
-            shape=((self.observation_range * 2 + 1),(self.observation_range * 2 + 1),),
+            shape=((self.observation_range * 2 + 1),(self.observation_range * 2 + 1), 1),
             dtype=np.int8,
         )
 
@@ -190,9 +190,9 @@ class DroneFireEnv(gymnasium.Env):
                     cross_c = rel_c + self.observation_range
                     for rr, cc in [(cross_r, cross_c), (cross_r - 1, cross_c), (cross_r + 1, cross_c), (cross_r, cross_c - 1), (cross_r, cross_c + 1)]:
                         if 0 <= rr < window_size and 0 <= cc < window_size:
-                            partial_obs[rr, cc] = 3.0
+                            partial_obs[rr, cc] = self.env.BLUE
 
-            new_obs[agent] = partial_obs
+            new_obs[agent] = partial_obs[..., None]
 
         new_obs['target'] = obs['target']
         return new_obs
@@ -309,13 +309,14 @@ class DroneFireEnv(gymnasium.Env):
         return frame
 
 class DroneFireSim:
-    GREEN, RED, BLACK, WHITE = 0, 1, 2, 3
+    GREEN, RED, BLACK, WHITE, BLUE = 0, 1, 2, 3, 4
 
     COLORS = np.array([
         [0, 255, 0],    # green
         [255, 0, 0],    # red
         [0, 0, 0],      # black
         [255, 255, 255], #white
+        [0, 0, 255],    # blue (teammate marker)
     ], dtype=np.uint8)
 
     ACTION_LIBRARY = {

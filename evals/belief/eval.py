@@ -69,7 +69,7 @@ def eval(
     model = load_model(config_dir, ckpt_dir)
 
     trainer = Trainer(deterministic=True,
-                      default_root_dir=log_dir,
+                      default_root_dir=model.hparams.log_dir,
                       val_check_interval=1.0)
 
     trainer.test(model)

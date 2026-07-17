@@ -305,7 +305,10 @@ class BeliefModel(pl.LightningModule):
 
         error = 0
 
-        output, mu, logvar = self.train_forward(data)
+        if self.vae:
+            output, mu, logvar = self.train_forward(data)
+        else:
+            output = self.train_forward(data)
 
         #avg_error = np.sum(np.linalg.norm(output.detach().cpu().numpy() - target.squeeze().detach().cpu().numpy(),axis=1))/len(data)
         test_loss = self.val_loss_func(output,target.squeeze())

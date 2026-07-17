@@ -76,6 +76,8 @@ env:
     oob_penalty: 1000
     step_reward: 1
     bc_scale: 0.5
+    spacing_scale: 0.0
+    min_spacing_dist: 0.6
     belief_dev_scale: 0.0
   belief_kwargs:
     max_speed: 0.8

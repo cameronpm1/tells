@@ -171,4 +171,4 @@ if __name__ == "__main__":
 # python run.py --command marl_eval_belief --config confs/predator_prey/3a_game_allocentric.yaml --model_dir logs/marl/pp_noisem_allo/checkpoint12000 --belief_config /home/cameron/tells/confs/belief/predator_prey.yaml --belief_dir /home/cameron/tells/logs/belief/_pp_bc_noisem_7n_predator_prey_NN_pp_7n_test/lightning_logs/checkpoints/{epoch}_{val_loss}
 
 
-#python run.py --command marl_eval_belief --config confs/predator_prey/3a_game_allocentric.yaml --model_dir logs/marl/pp_bc_noisem/checkpoint10000 --belief_config /home/cameron/tells/confs/belief/predator_prey.yaml --belief_dir logs/belief/_pp_bc_noisem_7n_predator_prey_VAE_NN_vae1_test4/lightning_logs/checkpoints/{epoch}_{val_loss}
+#python run.py --command marl_eval_belief --config confs/predator_prey/3a_game.yaml --model_dir logs/marl/predator_prey_omni/checkpoint5000 --belief_config /home/cameron/tells/confs/belief/predator_prey.yaml --belief_dir /home/cameron/tells/logs/belief/_predator_prey_omni_predator_prey_VAE_NN__1/lightning_logs/checkpoints/{epoch}_{val_loss}
