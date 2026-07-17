@@ -1,5 +1,3 @@
-import itertools
-
 import numpy as np
 
 import torch
@@ -104,13 +102,12 @@ class football_VAE_NN(nn.Module):
 		super().__init__()
 
 		self.loss = FootballVAEMSE()
-		self.val_loss = FootballMSE()
+		self.val_loss = nn.MSELoss()
 
-		self.linear1 = nn.Linear(input_channels, 512)
-		self.linear2 = nn.Linear(512, 1024)
-		self.linear3 = nn.Linear(1024, 4096)
-		self.linear6 = nn.Linear(4096, 1024)
-		self.linear7 = nn.Linear(1024, 64)
+		self.linear1 = nn.Linear(input_channels, 128)
+		self.linear2 = nn.Linear(128, 256)
+		self.linear3 = nn.Linear(256, 128)
+		self.linear4 = nn.Linear(128, 64)
 
 		self.vae = VAELayer(64, latent_dim)
 		self.decoder = nn.Linear(latent_dim, output_channels)
@@ -119,8 +116,7 @@ class football_VAE_NN(nn.Module):
 		x = nn.functional.relu(self.linear1(x))
 		x = nn.functional.relu(self.linear2(x))
 		x = nn.functional.relu(self.linear3(x))
-		x = nn.functional.relu(self.linear6(x))
-		x = nn.functional.relu(self.linear7(x))
+		x = nn.functional.relu(self.linear4(x))
 
 		z, mu, logvar = self.vae(x, stochastic=stochastic)
 		pred = self.decoder(z)
@@ -362,120 +358,6 @@ class DronesPermutationInvariantVAEMSE(nn.Module):
 
 		return recon_loss.mean()
 
-class FootballPermutationInvariantMSE(nn.Module):
-
-	def __init__(
-			self,
-		):
-		super().__init__()
-
-		perms = list(itertools.permutations(range(4)))
-		self.register_buffer('team_perms', torch.tensor(perms), persistent=False)
-
-	def forward(self, pred, target):
-		return self.permutation_invariant_loss(pred, target)
-
-	def permutation_invariant_loss(self, pred, target):
-		"""
-		pred:   (batch, 2 * (4 * 2 + 6))
-		target: (batch, 2 * (4 * 2 + 6))
-
-		layout: [team_prev, ball_prev, team_curr, ball_curr]
-		"""
-		team_size = 4 * 2
-		ball_size = 6
-
-		team_prev_pred, ball_prev_pred, team_curr_pred, ball_curr_pred = torch.split(
-			pred, [team_size, ball_size, team_size, ball_size], dim=1
-		)
-		team_prev_tgt, ball_prev_tgt, team_curr_tgt, ball_curr_tgt = torch.split(
-			target, [team_size, ball_size, team_size, ball_size], dim=1
-		)
-
-		team_prev_pred = team_prev_pred.view(-1, 4, 2)
-		team_curr_pred = team_curr_pred.view(-1, 4, 2)
-		team_prev_tgt = team_prev_tgt.view(-1, 4, 2)
-		team_curr_tgt = team_curr_tgt.view(-1, 4, 2)
-
-		# one shared teammate permutation across both states, so slot
-		# identity is consistent between the previous and current estimates
-		best_team_loss = None
-		for perm in self.team_perms:
-			prev_loss = ((team_prev_pred[:, perm] - team_prev_tgt) ** 2).mean(dim=2).sum(dim=1)
-			curr_loss = ((team_curr_pred[:, perm] - team_curr_tgt) ** 2).mean(dim=2).sum(dim=1)
-			combined_loss = prev_loss + curr_loss
-
-			if best_team_loss is None:
-				best_team_loss = combined_loss
-			else:
-				best_team_loss = torch.minimum(best_team_loss, combined_loss)
-
-		team_loss = best_team_loss.mean()
-
-		ball_loss = (
-			self._ball_cross_entropy(ball_prev_pred, ball_prev_tgt)
-			+ self._ball_cross_entropy(ball_curr_pred, ball_curr_tgt)
-		)
-
-		return team_loss + ball_loss
-
-	def _ball_cross_entropy(self, pred_logits, target_onehot):
-		target_idx = target_onehot.argmax(dim=1)
-		return F.cross_entropy(pred_logits, target_idx)
-
-class FootballMSE(nn.Module):
-
-	def __init__(
-			self,
-		):
-		super().__init__()
-
-	def forward(self, pred, target):
-		return self.loss(pred, target)
-
-	def loss(self, pred, target):
-		"""
-		pred:   (batch, 2 * (4 * 2 + 6)), (batch, 4 * 2 + 6), or (batch, 4 * 2)
-		target: matches pred
-
-		layout: [team_prev, ball_prev, team_curr, ball_curr], [team_curr, ball_curr],
-		or just team_curr when only the current team observation is provided
-		"""
-		team_size = 4 * 2
-		ball_size = 6
-
-		if pred.shape[1] == team_size:
-			return F.mse_loss(pred, target)
-
-		if pred.shape[1] == team_size + ball_size:
-			team_curr_pred, ball_curr_pred = torch.split(pred, [team_size, ball_size], dim=1)
-			team_curr_tgt, ball_curr_tgt = torch.split(target, [team_size, ball_size], dim=1)
-
-			team_loss = F.mse_loss(team_curr_pred, team_curr_tgt)
-			ball_loss = self._ball_cross_entropy(ball_curr_pred, ball_curr_tgt)
-
-			return team_loss + ball_loss
-
-		team_prev_pred, ball_prev_pred, team_curr_pred, ball_curr_pred = torch.split(
-			pred, [team_size, ball_size, team_size, ball_size], dim=1
-		)
-		team_prev_tgt, ball_prev_tgt, team_curr_tgt, ball_curr_tgt = torch.split(
-			target, [team_size, ball_size, team_size, ball_size], dim=1
-		)
-
-		team_loss = F.mse_loss(team_prev_pred, team_prev_tgt) + F.mse_loss(team_curr_pred, team_curr_tgt)
-
-		ball_loss = (
-			self._ball_cross_entropy(ball_prev_pred, ball_prev_tgt)
-			+ self._ball_cross_entropy(ball_curr_pred, ball_curr_tgt)
-		)
-
-		return team_loss + ball_loss
-
-	def _ball_cross_entropy(self, pred_logits, target_onehot):
-		target_idx = target_onehot.argmax(dim=1)
-		return F.cross_entropy(pred_logits, target_idx)
-
 class FootballVAEMSE(nn.Module):
 
 	def __init__(
@@ -483,9 +365,9 @@ class FootballVAEMSE(nn.Module):
 		):
 		super().__init__()
 
-		self.reconstruction_loss = FootballMSE()
+		self.reconstruction_loss = nn.MSELoss()
 
-	def forward(self, pred, target, mu, logvar, beta_kl=0.01):
+	def forward(self, pred, target, mu, logvar, beta_kl=0.0044):
 
 		kl_loss = -0.5 * torch.sum(
 			1 + logvar - mu.pow(2) - logvar.exp(),
