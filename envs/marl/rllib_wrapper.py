@@ -94,18 +94,19 @@ class RLLibWrapper(MultiAgentEnv):
         infos['__common__']['raw_reward'] = sum(rew.values())
         infos['__common__']['obs_no_noise'] = deepcopy(obs)
 
-        if self.noise is not None and not self.belief:
+        if self.noise is not None:
             for agent in self.agents:
-                team_old = self.temp_noise.get(agent, {}).get('team', np.zeros((self.n_agents-1)*self.dim))
-                team_noise = np.random.normal(0, self.noise['team'], size=(self.n_agents-1)*self.dim,)
                 target_noise = np.random.normal(0, self.noise['target'], size=self.dim,)
-                self.temp_noise[agent] = {'team': team_noise, 'team_old': team_old, 'target': target_noise}
-                obs[agent][self.env.obs_map['team']] = obs[agent][self.env.obs_map['team']] + team_noise
                 obs[agent][self.env.obs_map['target_pos']] = obs[agent][self.env.obs_map['target_pos']] + target_noise
-                if 'football' in self.name:
-                    ball_noise = np.random.normal(0, self.noise['team'], size=self.dim,)
-                    self.temp_noise[agent]['ball'] = ball_noise
-                    obs[agent][self.env.obs_map['ball_pos']] = obs[agent][self.env.obs_map['ball_pos']] + ball_noise
+                if not self.belief:
+                    team_old = self.temp_noise.get(agent, {}).get('team', np.zeros((self.n_agents-1)*self.dim))
+                    team_noise = np.random.normal(0, self.noise['team'], size=(self.n_agents-1)*self.dim,)
+                    obs[agent][self.env.obs_map['team']] = obs[agent][self.env.obs_map['team']] + team_noise
+                    self.temp_noise[agent] = {'team': team_noise, 'team_old': team_old, 'target': target_noise}
+                    if 'football' in self.name:
+                        ball_noise = np.random.normal(0, self.noise['team'], size=self.dim,)
+                        self.temp_noise[agent]['ball'] = ball_noise
+                        obs[agent][self.env.obs_map['ball_pos']] = obs[agent][self.env.obs_map['ball_pos']] + ball_noise
 
         if self.belief:
             self.obs_history.append(deepcopy(obs))

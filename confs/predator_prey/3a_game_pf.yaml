@@ -17,7 +17,7 @@ alg:
   num_gpus: 0
   pi : [256, 256, 256]
   vf : [256, 256, 256]
-  timesteps: 5000
+  timesteps: 1500
   checkpoint_freq: 250
   minibatch_size: 512
   num_epochs: 3
@@ -84,7 +84,7 @@ env:
     distance_scale: 0.0
     hold_scale: 20.0
     touch_penalty_scale: 70.0
-    belief_dev_scale: 0.1
+    belief_dev_scale: 0.5
   belief_kwargs:
     max_speed: 1.1
     speed_ratio: 0.35

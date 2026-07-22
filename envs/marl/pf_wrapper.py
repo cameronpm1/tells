@@ -18,6 +18,7 @@ class PFWrapper(MultiAgentEnv):
     def __init__(
             self,
             env,
+            name,
             particle_filter,
             agent_control_function,
             target_control_function,
@@ -29,6 +30,7 @@ class PFWrapper(MultiAgentEnv):
         super().__init__()
 
         self.env = env
+        self.name = name
         self.dim = dim
         self.eval = eval
         self.obs_map = env.obs_map
@@ -106,17 +108,19 @@ class PFWrapper(MultiAgentEnv):
         for agent in self.agents:
             infos[agent] = dict(env_infos.get(agent, {}))
 
-        '''
-        
-        for each cluster, propagate
-        get observation
-        give new pos observation
-        update weights
-        determine if should switch gaze
-        start clock to new observation
+        if self.noise is not None:
+            for agent in self.agents:
+                team_old = self.temp_noise.get(agent, {}).get('team', np.zeros((self.n_agents-1)*self.dim))
+                team_noise = np.random.normal(0, self.noise['team'], size=(self.n_agents-1)*self.dim,)
+                target_noise = np.random.normal(0, self.noise['target'], size=self.dim,)
+                self.temp_noise[agent] = {'team': team_noise, 'team_old': team_old, 'target': target_noise}
+                obs[agent][self.env.obs_map['team']] = obs[agent][self.env.obs_map['team']] + team_noise
+                obs[agent][self.env.obs_map['target_pos']] = obs[agent][self.env.obs_map['target_pos']] + target_noise
+                if 'football' in self.name:
+                    ball_noise = np.random.normal(0, self.noise['team'], size=self.dim,)
+                    self.temp_noise[agent]['ball'] = ball_noise
+                    obs[agent][self.env.obs_map['ball_pos']] = obs[agent][self.env.obs_map['ball_pos']] + ball_noise
 
-        '''
-        #propogate particle filter, and update observations appropriately 
         new_obs = deepcopy(obs)
         errors = []
 
@@ -126,6 +130,8 @@ class PFWrapper(MultiAgentEnv):
 
             pf_obs = self.particle_filters[agent].get_observation()
             new_obs[agent][self.obs_map['target_pos']] = pf_obs['target']['pos'] - pos
+            if 'football' in self.name:
+                new_obs[agent][self.obs_map['target_vel']] = pf_obs['target']['vel']
             start = self.obs_map['team'].start
 
             for i,key in enumerate(pf_obs.keys()):
@@ -155,7 +161,7 @@ class PFWrapper(MultiAgentEnv):
                 else:
                     self.switch_count[agent] += 1
             state_slice = slice(self.obs_map['target_pos'].start,self.obs_map['team'].stop)
-            error = self.permutation_invariant_error(obs[agent][state_slice], new_obs[agent][state_slice])
+            error = self.permutation_invariant_error(obs[agent][state_slice] - self.temp_noise[agent]['team'], new_obs[agent][state_slice])
             
             errors.append(error)
             rew[agent] = rew[agent] - error * self.env.reward_cfg['belief_dev_scale']

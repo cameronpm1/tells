@@ -100,6 +100,7 @@ def make_predator_prey_env(
     elif wrap == 'pf':
         env = PFWrapper(
             env,
+            name='predator_prey',
             particle_filter = PredatorPreyParticleFilter,
             agent_control_function = lambda obs, obs_map: action_to_vec(compute_slot_actions(obs, obs_map)),
             target_control_function = lambda obs, obs_map: action_to_vec(adversary_controller(obs, obs_map, config['env']['controller_kwargs'])),
@@ -164,6 +165,7 @@ def make_drones_env(
     elif wrap == 'pf':
         env = PFWrapper(
             env,
+            name='drones',
             particle_filter = DronesParticleFilter,
             agent_control_function = lambda obs, obs_map: action_to_vec(drone_controller(obs, obs_map, config['env']['controller_kwargs'])),
             target_control_function = lambda obs, obs_map: action_to_vec(vec_to_action(env.env._scripted_target_action(obs=obs)[0:3])),
@@ -223,6 +225,7 @@ def make_football_env(
     elif wrap == 'pf':
         env = PFWrapper(
             env,
+            name='football',
             particle_filter = FootballParticleFilter,
             agent_control_function = lambda obs, obs_map: action_to_vec(compute_rondo_actions(obs, obs_map)),
             target_control_function = lambda obs, obs_map: action_to_vec(adversary_controller(obs, obs_map, config['env']['controller_kwargs'])),

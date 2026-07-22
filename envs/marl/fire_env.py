@@ -224,19 +224,18 @@ class DroneFireEnv(gymnasium.Env):
         self,
         controller_metrics,
     ):
-        reward = 0
         green_count = np.sum(self.env.fire_state == self.env.GREEN)
         non_green_ratio = 1 - green_count / GRID_SIZE**2
 
-        reward += non_green_ratio * self.reward_kwargs['green_scale']
+        reward = non_green_ratio * self.reward_kwargs['green_scale']
         reward += controller_metrics['controller_action_reward'] * self.reward_kwargs['bc_scale']
 
         if np.all(self.env.fire_state != self.env.GREEN):
-            return self.reward_kwargs['lose_penalty']
+            return reward + self.reward_kwargs['lose_penalty']
         if np.all(self.env.fire_state != self.env.RED):
-            return self.reward_kwargs['extinguish_reward']
+            return reward + self.reward_kwargs['extinguish_reward']
 
-        return 0.0
+        return reward
 
     def _compute_truncation(self):
 
