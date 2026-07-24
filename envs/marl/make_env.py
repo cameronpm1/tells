@@ -107,6 +107,7 @@ def make_predator_prey_env(
             dim=2,
             eval=eval,
             belief_kwargs=config['env']['belief_kwargs'],
+            noise=config['env']['noise'],
         )
     elif wrap is None:
         pass
@@ -172,6 +173,7 @@ def make_drones_env(
             dim=3,
             eval=eval,
             belief_kwargs=config['env']['belief_kwargs'],
+            noise=config['env']['noise'],
         )
     elif wrap is None:
         pass
@@ -232,6 +234,7 @@ def make_football_env(
             dim=2,
             eval=eval,
             belief_kwargs=config['env']['belief_kwargs'],
+            noise=config['env']['noise'],
         )
     elif wrap is None:
         pass

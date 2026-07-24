@@ -1,14 +1,14 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/fire_tests
+logdir: /home/cameron/tells/logs/marl/fire_tests3
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 alg:
   type : ppo
   lr : 0.00003
   gamma: 0.99
-  nenvs : 
+  nenvs : 6
   cpu_envs: 2
   target_ent: 0.1
   batch: 4096
@@ -43,7 +43,8 @@ env:
   env_kwargs:
     warm_up_steps: 25
   reward_kwargs:
-    green_scale: -1
+    extinguish_scale: 0.4
+    green_scale: -5
     lose_penalty: -500
     extinguish_reward: 500
     bc_scale: 0.5

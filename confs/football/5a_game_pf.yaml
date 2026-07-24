@@ -5,24 +5,35 @@ logdir: /home/cameron/tells/logs/marl/football1
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 alg:
-  type : sac
-  lr : 0.0001 
+  type : ppo
+  lr : 0.00003
   gamma: 0.99
-  nenvs : 2
-  cpu_envs: 5
+  nenvs : 6
+  cpu_envs: 2
   target_ent: 0.1
-  batch: 256
+  batch: 4096
   batch_size: 256
-  buffer_size: 1000000
-  learning_starts: 100000
-  pi : [512, 512] # #[512,512,512] #[256, 256] #
-  vf : [512, 512] # #[512,512,512] #[256, 256] #
-  cl:
-    ts_start: 500000
-    ts_end: 2500000
-    val_start: 0.0
-    val_end: 1.0
-  timesteps : 100000
+  num_gpus: 0
+  pi : [512, 512, 512]
+  vf : [512, 512, 512]
+  timesteps: 5000
+  checkpoint_freq: 250
+  minibatch_size: 512
+  num_epochs: 3
+  lambda: 0.95
+  entropy_coeff: 0.0
+  clip_param: 0.05
+  vf_clip_param: 10.0
+  grad_clip: 0.25
+  pretrain:
+    enabled: true
+    episodes: 1800
+    epochs: 40
+    batch_size: 1024
+    lr: 0.0005
+    value_loss_coef: 0.02
+    grad_clip: 1.0
+    eval_runs: 50
 
 env:
   scenario: 5_agent_football
@@ -34,10 +45,21 @@ env:
     target_steal_penalty: -10.0
     deviation_threshold: 0.1
     deviation_scale: 0.5
+    controller_match_reward: 0.5
+    oob_penalty: -750
+    belief_dev_scale: 0.5
   controller_kwargs:
     dead_zone: 0.01
+    fast: false
+  noise:
+    team: 0.0
+    target: 0.0
   belief_kwargs:
-    speed: 1.0
+    max_speed: 0.12
+    speed_ratio: 1.0
+    ball_speed: 0.35
+    std_dev: 0.02
+    measurement_std: 0.02
 
 
 sim:

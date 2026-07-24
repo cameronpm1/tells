@@ -133,6 +133,7 @@ class DroneFireEnv(gymnasium.Env):
 
         obs, rew, done, info = self.env.step(filtered_actions)
 
+        controller_metrics['extinguished'] = rew
         truncations = self._compute_truncation()
         terminations = done
         #reward = self._compute_reward()
@@ -228,6 +229,7 @@ class DroneFireEnv(gymnasium.Env):
         non_green_ratio = 1 - green_count / GRID_SIZE**2
 
         reward = non_green_ratio * self.reward_kwargs['green_scale']
+        reward += controller_metrics['extinguished'] * self.reward_kwargs['extinguish_scale']
         reward += controller_metrics['controller_action_reward'] * self.reward_kwargs['bc_scale']
 
         if np.all(self.env.fire_state != self.env.GREEN):

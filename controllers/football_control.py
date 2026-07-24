@@ -96,6 +96,7 @@ def compute_rondo_actions(
     goal_point_angle_proximity: float = 0.2,
     target_proximity: float = 0.05,
     expand_ratio: float = 2.0,
+    stay_deadzone: float = 0.002,
 ) -> dict[str, int]:
 
     if isinstance(obs,dict):
@@ -135,18 +136,15 @@ def compute_rondo_actions(
 
             if angle_to_goal < goal_point_angle_proximity and np.linalg.norm(vel) > 0.001:
                 action = 9 #pass
-                #print('!!!!!!!!!!!!')
         elif (i - ball_owner) % 5 in (1, 5 - 1):
             #agent is neighboring an agent with the ball and should expand the circle
             desired_point = anchor * expand_ratio #expand the circle
             desired_vec = desired_point - pos
-        elif np.linalg.norm(anchor-pos) > anchor_max_dev:
-            desired_vec = anchor - pos
         else:
             desired_vec = anchor - pos
 
         if action is None:
-            if np.linalg.norm(desired_vec) > 0.002:
+            if np.linalg.norm(desired_vec) > stay_deadzone:
                 action = vec_to_action(desired_vec)
             else:
                 action = 0

@@ -493,8 +493,8 @@ class CaravanAviary(BaseRLAviary):
 
         reward += self.reward_cfg['step_reward']
 
-        protected = self._compute_protected_boxes()
-        reward += np.sum(protected) * self.reward_cfg.get('protected_scale', 1)
+        #protected = self._compute_protected_boxes()
+        #reward += np.sum(protected) * self.reward_cfg.get('protected_scale', 1)
 
         reward += self.controller_metrics['controller_action_reward'] * self.reward_cfg['bc_scale']
 

@@ -96,7 +96,7 @@ class CirclePass5v1Env(gym.Env):
         self.n_agents = len(self.agents)
         self.adversary_controller = adversary_controller
         self.max_episode_length = max_episode_length
-        self.reward_kwargs = reward_kwargs
+        self.reward_cfg = reward_kwargs
         self.controller_kwargs = controller_kwargs
         self.full_agent_list = full_agent_list
         self._step = 0
@@ -192,6 +192,8 @@ class CirclePass5v1Env(gym.Env):
         actions = []
         for agent in self.agents:
             actions.append(actions_dict[agent])
+
+        actions = [controller_actions[agent] for agent in self.agents]
         controller_metrics = self.behavior_cloning_reward(actions_dict)
         if self._step == 1 and self.controller_kwargs['fast']:
             adversary_action = 10 #turn on sprint 
@@ -317,13 +319,13 @@ class CirclePass5v1Env(gym.Env):
     def _compute_team_reward(self, obs, controller_metrics):
 
         reward = 0
-        reward += controller_metrics['controller_action_reward'] * self.reward_kwargs['controller_match_reward']
+        reward += controller_metrics['controller_action_reward'] * self.reward_cfg['controller_match_reward']
         ball_owner = np.where((obs['agent0'][self.obs_map['ball_owner']]) == 1)[0]
         target_has_ball = obs['target'][self.obs_map['target_ball_owned']][0]
         if self.oob:
-            return self.reward_kwargs['oob_penalty']
+            return self.reward_cfg['oob_penalty']
         elif target_has_ball:
-            return self.reward_kwargs['target_steal_penalty']
+            return self.reward_cfg['target_steal_penalty']
         else:
             if len(ball_owner) > 0:
                 if self.prev_ball_owned_player == -1:
@@ -331,15 +333,15 @@ class CirclePass5v1Env(gym.Env):
                 else:
                     if self.prev_ball_owned_player != ball_owner[-1]:
                         if (self.prev_ball_owned_player - ball_owner[-1]) % 5 in (1, 5 - 1):
-                            reward += self.reward_kwargs['pass_reward']
+                            reward += self.reward_cfg['pass_reward']
                         else:
                             #double reward for non-neighbor passes
-                            reward += 2*self.reward_kwargs['pass_reward']
+                            reward += 2*self.reward_cfg['pass_reward']
                         self.prev_ball_owned_player = ball_owner[-1]
 
         dev = np.linalg.norm(self.raw_obs[0]['left_team'][1:] - AGENT_ANCHORS, axis=1)
-        dev_threshold = [1 if d > self.reward_kwargs['deviation_threshold'] else 0 for d in dev]
-        reward += (5 - sum(dev_threshold)) * self.reward_kwargs['deviation_scale']
+        dev_threshold = [1 if d > self.reward_cfg['deviation_threshold'] else 0 for d in dev]
+        reward += (5 - sum(dev_threshold)) * self.reward_cfg['deviation_scale']
 
         return reward
 

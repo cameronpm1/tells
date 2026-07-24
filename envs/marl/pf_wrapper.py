@@ -37,6 +37,7 @@ class PFWrapper(MultiAgentEnv):
         self.belief_kwargs = belief_kwargs
         self.agents = deepcopy(env.agents)
         self.possible_agents = deepcopy(env.agents)
+        self.n_agents = env.n_agents
         self.last_raw_reward = None
         self.noise = noise
 
@@ -70,6 +71,7 @@ class PFWrapper(MultiAgentEnv):
             target_start = np.zeros((dim,))
             self.particle_filters[agent] = particle_filter(
                 obs_map = self.obs_map,
+                agent_name = agent,
                 agent_start_pos = start_dict,
                 target_start_pos = target_start,
                 agent_control_function = agent_control_function,
@@ -83,6 +85,7 @@ class PFWrapper(MultiAgentEnv):
         
         self.switch_time = 1 #number of timesteps it takes to observe new agent
         self.min_confidence_agent = {}
+        self.temp_noise = {}
 
         self._step = 0
         
@@ -132,6 +135,7 @@ class PFWrapper(MultiAgentEnv):
             new_obs[agent][self.obs_map['target_pos']] = pf_obs['target']['pos'] - pos
             if 'football' in self.name:
                 new_obs[agent][self.obs_map['target_vel']] = pf_obs['target']['vel']
+                new_obs[agent][self.obs_map['ball_owner']] = pf_obs.pop('ball_owner')
             start = self.obs_map['team'].start
 
             for i,key in enumerate(pf_obs.keys()):
@@ -151,7 +155,10 @@ class PFWrapper(MultiAgentEnv):
 
             if self.switch_count[agent] >= 0:
                 if self.switch_count[agent] == self.switch_time or self.min_confidence_agent[agent][0] == self.observing_agent[agent]:
-                    self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][self.obs_map['self_pos']])
+                    if 'football' in self.name:
+                        self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][self.obs_map['self_pos']],action_dict[agent])
+                    else:
+                        self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][self.obs_map['self_pos']])
                     self.switch_count[agent] = 0
                     if self.min_confidence_agent[agent][0] == self.observing_agent[agent]:
                         self.consecutive_agent_count[agent] += 1
@@ -160,8 +167,14 @@ class PFWrapper(MultiAgentEnv):
                     self.observing_agent[agent] = self.min_confidence_agent[agent][0]
                 else:
                     self.switch_count[agent] += 1
-            state_slice = slice(self.obs_map['target_pos'].start,self.obs_map['team'].stop)
-            error = self.permutation_invariant_error(obs[agent][state_slice] - self.temp_noise[agent]['team'], new_obs[agent][state_slice])
+            if 'football' in self.name:
+                team_slice = self.obs_map['team']
+                team_noise = self.temp_noise[agent]['team']
+                error = np.mean((obs[agent][team_slice] - team_noise - new_obs[agent][team_slice]) ** 2)
+            else:
+                state_slice = slice(self.obs_map['target_pos'].start,self.obs_map['team'].stop)
+                agent_noise = np.concatenate((np.zeros((2,)),self.temp_noise[agent]['team']))
+                error = self.permutation_invariant_error(obs[agent][state_slice] - agent_noise, new_obs[agent][state_slice])
             
             errors.append(error)
             rew[agent] = rew[agent] - error * self.env.reward_cfg['belief_dev_scale']
@@ -252,7 +265,7 @@ class PFWrapper(MultiAgentEnv):
         static = np.linalg.norm(pred[:self.dim] - target[:self.dim])
 
         # Take minimum per sample, then sum batch
-        return np.minimum(direct, swapped).sum() + static
+        return np.minimum(direct, swapped).sum() #+ static
 
     def render_rgb(self, show: bool = False, window_name: str = "PredatorPrey"):
         """

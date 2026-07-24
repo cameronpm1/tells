@@ -199,7 +199,21 @@ class ParticleCluster:
         positions = np.array([p.position for p in self.particles])
         mean_pos = np.average(positions, axis=0, weights=self.weights)
         return mean_pos, 1/np.max(np.std(positions,axis=0)) #np.average(np.stdev(positions, axis=0))
-    
+
+    def estimate_direction(self):
+        """
+        Compute weighted average heading (unit vector) of the cluster.
+
+        Returns:
+            np.array: estimated unit direction vector
+        """
+        velocities = np.array([p.velocity_dir * p.speed for p in self.particles])
+        mean_vel = np.average(velocities, axis=0, weights=self.weights)
+        norm = np.linalg.norm(mean_vel)
+        if norm == 0:
+            return mean_vel
+        return mean_vel / norm
+
     def update_weights(self, measurement, measurement_std):
         """
         Update particle weights based on a measurement (e.g., observed position).
@@ -226,10 +240,81 @@ class ParticleCluster:
         return positions, velocities
 
 
+class FootballParticleCluster(ParticleCluster):
+    def __init__(self,
+        control_function,
+        num_particles: int = 100,
+        mean_pos: list[float] = [0.0,0.0],
+        std_dev: list[float] = [0.0,0.0],
+        resample_threshold: float = 0.06,
+        pass_threshold: bool = 0.15,
+        dim: int = 2,
+        max_speed: float = 0.4,
+        dt: float = 0.1,
+        target = False,
+        process_noise_std_pos: float = 0.001,
+        process_noise_std_dir: float = 0.01,
+    ):
+        super().__init__(
+            control_function,
+            num_particles=num_particles,
+            mean_pos=mean_pos,
+            std_dev=std_dev,
+            resample_threshold=resample_threshold,
+            dim=dim,
+            max_speed=max_speed,
+            dt=dt,
+            target=target,
+        )
+
+        self.pass_threshold = pass_threshold
+        self.process_noise_std_pos = process_noise_std_pos
+        self.process_noise_std_dir = process_noise_std_dir
+
+    def propagate(self, dt, current_obs, target, team_positions, ball_owner, ball_position, obs_map):
+
+        num_particles = len(self.particles)
+
+        pass_count = 0
+        self.last_vel_cmds = []
+
+        for i, particle in enumerate(self.particles):
+            #convert to relative observations
+            temp_obs = deepcopy(current_obs)
+            team_positions_i = team_positions - np.tile(particle.position,len(team_positions)//self.dim)
+            temp_obs[obs_map['self_pos']] = particle.position
+            temp_obs[obs_map['target_pos']] = target['pos'] - particle.position
+            temp_obs[obs_map['target_vel']] = target['vel']
+            temp_obs[obs_map['ball_owner']] = ball_owner
+            if not self.target:
+                temp_obs[obs_map['team']] = team_positions_i
+            else:
+                temp_obs[obs_map['target_obs']] = team_positions_i
+                temp_obs[obs_map['ball_pos']] = ball_position
+
+            vel_cmd = self.control_func(temp_obs,obs_map)
+            self.last_vel_cmds.append(vel_cmd)
+
+            if vel_cmd is None:
+                pass_count += 1
+                vel_cmd = np.zeros((2,))
+
+            particle.add_control(vel_cmd)
+            particle.propagate(dt, process_noise_std_pos=self.process_noise_std_pos, process_noise_std_dir=self.process_noise_std_dir)
+
+        self.last_pass_fraction = pass_count/num_particles
+
+        if pass_count/num_particles > self.pass_threshold:
+            return 1 #pass
+        else:
+            return 0 #no pass
+
+
 class PredatorPreyParticleFilter:
     def __init__(
         self, 
         obs_map,
+        agent_name,
         agent_start_pos: dict,  # e.g., {'agent0': [x0, y0], 'agent1': [x1, y1]}
         target_start_pos: list[float], 
         agent_control_function,
@@ -242,6 +327,7 @@ class PredatorPreyParticleFilter:
         dt: float = 0.1
     ):
         self.obs_map = obs_map
+        self.agent_name = agent_name
         self.n_agents = len(agent_start_pos.keys())
         self.target_pos = np.array(target_start_pos, dtype=float)
         self.clusters = {}
@@ -349,6 +435,7 @@ class DronesParticleFilter(PredatorPreyParticleFilter):
     def __init__(
         self, 
         obs_map,
+        agent_name,
         agent_start_pos: dict,  # e.g., {'agent0': [x0, y0], 'agent1': [x1, y1]}
         target_start_pos: list[float], 
         agent_control_function,
@@ -361,7 +448,8 @@ class DronesParticleFilter(PredatorPreyParticleFilter):
         dt: float = 0.333
     ):
         super().__init__(
-            obs_map,
+            obs_map=obs_map,
+            agent_name=agent_name,
             agent_start_pos=agent_start_pos,
             target_start_pos=target_start_pos,
             agent_control_function=agent_control_function,
@@ -378,81 +466,196 @@ class DronesParticleFilter(PredatorPreyParticleFilter):
 
 class FootballParticleFilter(PredatorPreyParticleFilter):
     def __init__(
-        self, 
+        self,
         obs_map,
-        agent_start_pos: dict,  # e.g., {'agent0': [x0, y0], 'agent1': [x1, y1]}
-        target_start_pos: list[float], 
+        agent_name,
+        agent_start_pos: dict,
+        target_start_pos: list[float],
         agent_control_function,
         target_control_function,
-        num_particles: int = 100,
+        num_particles: int = 10,
+        resample_threshold: float = 0.06,
         std_dev: float = 0.2,
         max_speed: float = 1.0,
         speed_ratio: float = 0.5,
+        ball_speed: float = 0.1,
+        measurement_std: float = 0.02,
         dt: float = 0.1
     ):
-        super().__init__(
-            obs_map,
-            agent_start_pos=agent_start_pos,
-            target_start_pos=target_start_pos,
-            agent_control_function=agent_control_function,
-            target_control_function=target_control_function,
+        self.obs_map = obs_map
+        self.agent_name = agent_name
+        self.n_agents = len(agent_start_pos.keys())
+        self.target_pos = np.array(target_start_pos, dtype=float)
+        self.clusters = {}
+        self.dim = len(target_start_pos)
+        self.dt = dt
+        self.max_speed = max_speed
+        self.speed_ratio = speed_ratio
+        self.std_dev = std_dev
+
+        for name, pos in agent_start_pos.items():
+            self.clusters[name] = FootballParticleCluster(
+                agent_control_function,
+                num_particles=num_particles,
+                mean_pos=np.array(pos, dtype=float),
+                std_dev=np.ones(self.dim) * self.std_dev,
+                resample_threshold=resample_threshold,
+                dim=self.dim,
+                max_speed=self.max_speed,
+                dt=dt,
+                target=False,
+            )
+
+        self.clusters['target'] = FootballParticleCluster(
+            target_control_function,
             num_particles=num_particles,
-            std_dev=std_dev,
-            max_speed=max_speed,
-            speed_ratio=speed_ratio,
-            dt=dt
+            mean_pos=self.target_pos,
+            std_dev=np.ones(self.dim) * self.std_dev,
+            resample_threshold=resample_threshold,
+            dim=self.dim,
+            max_speed=self.max_speed*self.speed_ratio,
+            dt=dt,
+            target=True,
         )
 
+        self.agent_i = int(self.agent_name[-1])
+        self.ball_speed = ball_speed
+        self.measurement_std = measurement_std
+        self.ball_position = None
+        self.pass_start_pos = None
+        self.pass_total_steps = None
+        self.pass_steps = None
+        self.receiver_idx = None
+        self.last_action = None
+        self.pass_prediction_stats = {'correct': 0, 'incorrect': 0}
 
-    def reset(
-        self,
-        agent_start_pos: dict,  # e.g., {'agent0': [x0, y0], 'agent1': [x1, y1]}
-        target_start_pos: list[float], 
-    ):
+    def reset(self, obs: dict):
+        agent_names = [self.agent_name] + [name for name in self.clusters.keys() if 'agent' in name]
+        ball_pos_global = obs[self.agent_name][self.obs_map['ball_pos']] + obs[self.agent_name][self.obs_map['self_pos']]
+        closest_name = min(
+            agent_names,
+            key=lambda name: np.linalg.norm(obs[name][self.obs_map['self_pos']] - ball_pos_global),
+        )
 
-        # Initialize one ParticleCluster per predator
-        for i, (name, pos) in enumerate(agent_start_pos.items()):
-            mean_pos = np.array(pos, dtype=float)
+        self.ball_owner = np.zeros_like(obs[self.agent_name][self.obs_map['ball_owner']])
+        self.ball_owner[int(closest_name[-1])] = 1
+        self.ball_passing = False
+
+        for name in self.clusters.keys():
+            mean_pos = np.array(obs[name][self.obs_map['self_pos']], dtype=float)
             self.clusters[name].initialize_gaussian(mean_pos,np.ones(self.dim) * self.std_dev)
 
-        # Initialize target cluster
-        self.clusters['target'].initialize_gaussian(target_start_pos,np.ones(self.dim) * self.std_dev)
-
-    def propagate_all(self, current_obs): #, goal):
-
-        team_positions = []
-        target_position = None
-
-        # Get estimated mean positions
-        for name in self.clusters.keys():
-            mean_pos, _ = self.clusters[name].estimate_mean_position()
-            if 'agent' in name:
-                team_positions.append(mean_pos)
-            elif name == 'target':
-                target = mean_pos #current np.concatenate((goal,mean_pos))
-
-        team_positions = np.array(team_positions)
-
-        # Propagate predator clusters
-        for i, name in enumerate(self.clusters.keys()):
-            if 'agent' in name:
-                self.clusters[name].propagate(self.dt, current_obs, target, np.delete(deepcopy(team_positions), i, axis=0).flatten(), self.obs_map)
-            else:
-                self.clusters[name].propagate(self.dt, current_obs, target, team_positions.flatten(), self.obs_map)
+        self.init_obs = deepcopy(obs)
 
     def update_observation(
-        self, 
-        agent_name: str, 
-        observed_pos: np.ndarray, 
-        measurement_std: float = 0.1
+        self,
+        agent_name: str,
+        observed_pos: np.ndarray,
+        action = None,
+        measurement_std: float = None,
     ):
 
         if agent_name not in self.clusters:
             raise ValueError(f"Agent name '{agent_name}' not found in clusters.")
 
+        if measurement_std is None:
+            measurement_std = self.measurement_std
+
         force_reset = self.clusters[agent_name].update_weights(observed_pos, measurement_std)
         if not force_reset:
             self.clusters[agent_name].resample()
+
+        if 'agent' in agent_name and self.ball_owner[int(agent_name[-1])] > 0:
+            self.ball_position = deepcopy(observed_pos)
+            self.ball_owner = np.zeros_like(self.ball_owner)
+            self.ball_owner[int(agent_name[-1])] = 1
+            if self.ball_passing:
+                self.ball_passing = False
+                self.pass_steps = None
+
+        self.last_action = action
+
+    def propagate_all(self, current_obs):
+
+        if self.pass_steps is not None:
+            self.pass_steps -= 1
+            if self.pass_steps <= 0:
+                true_ball_owner = current_obs[self.obs_map['ball_owner']]
+                true_idx = int(np.argmax(true_ball_owner)) if true_ball_owner.max() > 0 else -1
+                if true_idx == self.receiver_idx:
+                    self.pass_prediction_stats['correct'] += 1
+                else:
+                    self.pass_prediction_stats['incorrect'] += 1
+
+                self.ball_owner = np.zeros_like(self.ball_owner)
+                self.ball_owner[self.receiver_idx] = 1
+                self.ball_passing = False
+                self.pass_steps = None
+
+        if current_obs[self.obs_map['ball_owner']][self.agent_i] > 0:
+            self.ball_owner = deepcopy(current_obs[self.obs_map['ball_owner']])
+
+        team_positions = []
+        for name in self.clusters.keys():
+            mean_pos, _ = self.clusters[name].estimate_mean_position()
+            if 'agent' in name:
+                team_positions.append(mean_pos)
+            elif name == 'target':
+                target = {}
+                target['pos'] = mean_pos
+                target['vel'] = self.clusters[name].estimate_direction()
+
+        team_positions = np.array(team_positions)
+        team_ordered = np.insert(team_positions,self.agent_i,current_obs[self.obs_map['self_pos']],axis=0)
+
+        PASS_ACTION = 9
+        if self.last_action == PASS_ACTION and self.ball_owner[self.agent_i] > 0:
+            self._begin_pass(team_ordered[self.agent_i], current_obs[self.obs_map['self_vel']], team_ordered, self.agent_i)
+            self.last_action = None
+
+        if self.ball_passing and self.pass_steps is not None:
+            elapsed = self.pass_total_steps - self.pass_steps
+            frac = np.clip(elapsed / self.pass_total_steps, 0.0, 1.0)
+            receiver_pos = team_ordered[self.receiver_idx]
+            self.ball_position = self.pass_start_pos + (receiver_pos - self.pass_start_pos) * frac
+        elif self.ball_owner.max() > 0:
+            owner_idx = int(np.argmax(self.ball_owner))
+            if owner_idx < len(team_ordered):
+                self.ball_position = team_ordered[owner_idx]
+            else:
+                self.ball_position = target['pos']
+
+        for name in self.clusters.keys():
+            if 'agent' in name:
+                idx = int(name[-1])
+                team_reordered = np.roll(team_ordered,-idx,axis=0)
+                ball_owner_reordered = np.roll(self.ball_owner,-idx,axis=0)
+                current_obs[self.obs_map['self_anchor']] = self.init_obs[name][self.obs_map['self_anchor']]
+                passed = self.clusters[name].propagate(self.dt, current_obs, target, team_reordered[1:].flatten(), ball_owner_reordered, self.ball_position, self.obs_map)
+
+                if passed:
+                    self._begin_pass(team_ordered[idx], self.clusters[name].estimate_direction(), team_ordered, idx)
+            else:
+                self.clusters[name].propagate(self.dt, np.concatenate((current_obs,np.zeros((self.dim,)))), target, team_ordered.flatten(), self.ball_owner, self.ball_position, self.obs_map)
+
+    def _begin_pass(self, passer_pos, passer_dir, team_ordered, passer_idx):
+        passer_norm = np.linalg.norm(passer_dir)
+        if passer_norm > 0:
+            passer_dir = passer_dir / passer_norm
+
+        teammate_idxs = [j for j in range(len(team_ordered)) if j != passer_idx]
+        rel_vecs = team_ordered[teammate_idxs] - passer_pos
+        angles = [abs(np.arctan2(np.cross(passer_dir, v), np.dot(passer_dir, v))) for v in rel_vecs]
+        receiver_idx = teammate_idxs[int(np.argmin(angles))]
+
+        self.ball_passing = True
+        self.receiver_idx = receiver_idx
+        self.pass_distance = np.linalg.norm(team_ordered[receiver_idx] - passer_pos)
+        self.pass_steps = int(np.ceil(self.pass_distance / (self.ball_speed * self.dt)))
+        self.pass_start_pos = passer_pos
+        self.pass_total_steps = max(self.pass_steps, 1)
+        self.ball_owner = np.zeros_like(self.ball_owner)
+
 
     def get_observation(
         self,
@@ -463,13 +666,10 @@ class FootballParticleFilter(PredatorPreyParticleFilter):
             pos, confidence = cluster.estimate_mean_position()
             obs[name]['pos'] = pos
             obs[name]['confidence'] = confidence
+            if 'target' in name:
+                vel = self.clusters[name].estimate_direction()
+                obs[name]['vel'] = vel
+
+        obs['ball_owner'] = self.ball_owner
 
         return obs
-
-    def get_positions_and_velocities(self):
-
-        state_dict = {}
-        for name, cluster in self.clusters.items():
-            positions, velocities = cluster.get_state()
-            state_dict[name] = (positions, velocities)
-        return state_dict
