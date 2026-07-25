@@ -84,7 +84,7 @@ env:
     distance_scale: 0.0
     hold_scale: 20.0
     touch_penalty_scale: 70.0
-    belief_dev_scale: 0.5
+    belief_dev_scale: 2.0
 
 sim:
   n: 3 #number of pursuit agents
