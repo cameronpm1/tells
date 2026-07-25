@@ -151,7 +151,7 @@ class RLLibWrapper(MultiAgentEnv):
                     if self.belief_model.vae:
                         infos['__common__']['sampled_predictions'][agent] = self.belief_model.sample_stochastic(model_input).detach().cpu().numpy()[:, obs_idxs]
                     else:
-                        infos['__common__']['sampled_predictions'][agent] = prediction[np.newaxis, obs_idxs]
+                        infos['__common__']['sampled_predictions'][agent] = team_state
             avg_error = np.average(errors)
             infos['__common__']['belief_error'] = avg_error
             self.prediction_history.append(predictions)
