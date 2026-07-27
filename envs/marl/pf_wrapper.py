@@ -84,6 +84,7 @@ class PFWrapper(MultiAgentEnv):
 
         
         self.switch_time = 1 #number of timesteps it takes to observe new agent
+        self.force_change_count = 1
         self.min_confidence_agent = {}
         self.temp_noise = {}
 
@@ -101,15 +102,15 @@ class PFWrapper(MultiAgentEnv):
         terminated_all = False
         truncated_all = False
 
-        obs,rew,terminated,truncated,env_infos = self.env.step(action_dict)
+        obs,rew,terminated,truncated,infos = self.env.step(action_dict)
         rew = dict(rew)
 
+        infos['__common__']['obs_no_noise'] = deepcopy(obs)
+        infos['__common__']['obs_no_noise'].pop('target',None)
+
         if self.eval:
-            infos = {'target': obs['target']}
-        else:
-            infos = {}
-        for agent in self.agents:
-            infos[agent] = dict(env_infos.get(agent, {}))
+            infos['target'] = obs['target']
+        
 
         if self.noise is not None:
             for agent in self.agents:
@@ -126,6 +127,7 @@ class PFWrapper(MultiAgentEnv):
 
         new_obs = deepcopy(obs)
         errors = []
+        sampled_predictions = {} if self.eval else None
 
         for agent in self.agents:
             pos = obs[agent][self.obs_map['self_pos']]
@@ -136,6 +138,7 @@ class PFWrapper(MultiAgentEnv):
             if 'football' in self.name:
                 new_obs[agent][self.obs_map['target_vel']] = pf_obs['target']['vel']
                 new_obs[agent][self.obs_map['ball_owner']] = pf_obs.pop('ball_owner')
+                new_obs[agent][self.obs_map['ball_pos']] = pf_obs.pop('ball_pos') - pos
             start = self.obs_map['team'].start
 
             for i,key in enumerate(pf_obs.keys()):
@@ -147,8 +150,12 @@ class PFWrapper(MultiAgentEnv):
                         self.min_confidence_agent[agent] = (key, pf_obs[key]['confidence'])
                     if pf_obs[key]['confidence'] < self.min_confidence_agent[agent][1]:
                         self.min_confidence_agent[agent] = (key, pf_obs[key]['confidence'])
+
+            if self.eval:
+                sampled_predictions[agent] = deepcopy(new_obs[agent][self.obs_map['team']])
+
             all_same = all(pf_obs[agent2]['confidence'] == self.min_confidence_agent[agent][1] for agent2 in pf_obs.keys())
-            if all_same or self.consecutive_agent_count[agent] > 2:
+            if all_same or self.consecutive_agent_count[agent] > self.force_change_count:
                 self.consecutive_agent_count[agent] = 0
                 ran_agent = np.random.choice(list(pf_obs.keys()))
                 self.min_confidence_agent[agent] = (ran_agent, pf_obs[ran_agent]['confidence'])
@@ -190,9 +197,10 @@ class PFWrapper(MultiAgentEnv):
         terminated["__all__"] = all(terminated.values())
         truncated["__all__"] = all(truncated.values())
         
-        infos['__common__'] = {}
         infos['__common__']['raw_reward'] = sum(rew.values())
         infos['__common__']['belief_error'] = avg_error
+        if self.eval:
+            infos['__common__']['sampled_predictions'] = sampled_predictions
 
         self.last_raw_reward = sum(rew.values())
 
@@ -207,8 +215,8 @@ class PFWrapper(MultiAgentEnv):
         obs,infos = {},{}
         obs,infos = self.env.reset(**kwargs)
 
-        infos['__common__'] = {}
         infos['__common__']['raw_reward'] = 0.0
+        infos['__common__']['obs_no_noise'] = deepcopy(obs)
         self.last_raw_reward = 0.0
 
         for agent in self.agents:
@@ -267,7 +275,11 @@ class PFWrapper(MultiAgentEnv):
         # Take minimum per sample, then sum batch
         return np.minimum(direct, swapped).sum() #+ static
 
-    def render_rgb(self, show: bool = False, window_name: str = "PredatorPrey"):
+    def render_rgb(self):
+        #return self.env.render_rgb()
+        return self.render_rgb_fb()
+
+    def render_rgb_pp(self, show: bool = False, window_name: str = "PredatorPrey"):
         """
         Draw the predator-prey environment using self.obs, then overlay estimated
         other-agent locations from self.new_obs with semi-transparent markers.
@@ -505,6 +517,130 @@ class PFWrapper(MultiAgentEnv):
 
         if show:
             cv2.imshow(window_name, frame)
+            cv2.waitKey(1)
+
+        return frame
+
+    def render_rgb_fb(self, show: bool = False, window_name: str = "Football"):
+        """
+        Draw the football environment using self.env.render_rgb(), then overlay
+        estimated teammate/target locations from self.new_obs with semi-transparent
+        markers.
+
+        Expected:
+            self.obs:
+                dict mapping agent_name -> true observation array
+
+            self.new_obs:
+                dict mapping observer_agent_name -> estimated observation array
+
+        Relative estimates (obs_map['target_pos'] and obs_map['team']) are added
+        to the observer's true position (obs_map['self_pos']) to get an absolute
+        estimate, using the same pitch coordinates as football_env.render_rgb.
+        """
+        import cv2
+        import numpy as np
+
+        if self.obs is None:
+            raise ValueError("self.obs is None. Call reset() or step() before drawing.")
+
+        if not isinstance(self.obs, dict):
+            raise TypeError("Expected self.obs to be a dict mapping agent names to observations.")
+
+        frame = self.env.render_rgb()
+        frame = np.asarray(frame, dtype=np.uint8)
+        height, width = frame.shape[0], frame.shape[1]
+
+        x_min, x_max = -1.05, 1.05
+        y_min, y_max = -0.45, 0.45
+        margin = 40
+
+        def to_px(pos):
+            x, y = float(pos[0]), float(pos[1])
+            px = margin + (x - x_min) / (x_max - x_min) * (width - 2 * margin)
+            py = margin + (y - y_min) / (y_max - y_min) * (height - 2 * margin)
+            return int(px), int(py)
+
+        def in_play(pos):
+            return x_min <= pos[0] <= x_max and y_min <= pos[1] <= y_max
+
+        def agent_color_rgb(name):
+            # frame is a numpy array converted from a PIL image (RGB channel
+            # order), unlike the BGR frames used elsewhere in this file.
+            if name == "target":
+                return (255, 60, 60)
+            else:
+                return (40, 90, 255)
+
+        true_positions = {}
+        for name, obs in self.obs.items():
+            obs = np.asarray(obs, dtype=np.float32).reshape(-1)
+            true_positions[name] = obs[self.obs_map["self_pos"]]
+
+        estimated_radius = 10
+        estimate_alpha = 0.35
+
+        def draw_estimate(canvas, world_pos, color, label):
+            px, py = to_px(world_pos)
+            cv2.circle(canvas, (px, py), estimated_radius, color, -1)
+            cv2.circle(canvas, (px, py), max(1, estimated_radius // 3), (255, 255, 255), -1)
+            cv2.circle(canvas, (px, py), estimated_radius, (0, 0, 0), 1)
+            cv2.putText(
+                canvas,
+                label,
+                (px + estimated_radius + 3, py + estimated_radius + 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.32,
+                (80, 80, 80),
+                1,
+                cv2.LINE_AA,
+            )
+
+        if hasattr(self, "new_obs") and self.new_obs is not None:
+            overlay = frame.copy()
+
+            for observer_name, estimated_obs in self.new_obs.items():
+                if observer_name not in true_positions:
+                    continue
+
+                estimated_obs = np.asarray(estimated_obs, dtype=np.float32).reshape(-1)
+                observer_true_pos = true_positions[observer_name]
+
+                # Estimated target position.
+                target_rel = estimated_obs[self.obs_map["target_pos"]]
+                target_est_pos = observer_true_pos + target_rel
+                if in_play(target_est_pos):
+                    draw_estimate(
+                        overlay,
+                        target_est_pos,
+                        agent_color_rgb("target"),
+                        f"est:{observer_name}->target",
+                    )
+
+                # Estimated teammate positions.
+                other_names = [n for n in self.agents if n != observer_name]
+                team_flat = estimated_obs[self.obs_map["team"]]
+                num_to_draw = min(len(other_names), len(team_flat) // 2)
+
+                for i in range(num_to_draw):
+                    rel = team_flat[2 * i: 2 * i + 2]
+                    est_pos = observer_true_pos + rel
+
+                    if not in_play(est_pos):
+                        continue
+
+                    other_name = other_names[i]
+                    draw_estimate(
+                        overlay,
+                        est_pos,
+                        agent_color_rgb(other_name),
+                        f"est:{observer_name}->{other_name}",
+                    )
+
+            frame = cv2.addWeighted(overlay, estimate_alpha, frame, 1.0 - estimate_alpha, 0)
+
+        if show:
+            cv2.imshow(window_name, frame[:, :, ::-1])
             cv2.waitKey(1)
 
         return frame

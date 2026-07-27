@@ -219,7 +219,7 @@ if __name__ == "__main__":
 
         print('Evaluating PF model with config:', args.config)
         print('Loading model from:', args.model_dir)
-        eval(args.config,args.model_dir,args.runs)
+        eval(args.config,args.model_dir,args.runs,collect_results=args.collect_results)
 
     elif 'pf_train' == args.command:
 

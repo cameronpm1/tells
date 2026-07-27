@@ -172,7 +172,7 @@ def adversary_controller(
 
     force = np.zeros(2)
 
-    rel_ball_pos = obs[obs_map['target_ball']][0:2]
+    rel_ball_pos = -obs[obs_map['target_ball']][0:2]
 
     if np.linalg.norm(rel_ball_pos) < controller_cfg['dead_zone']:
         vec = 0.0

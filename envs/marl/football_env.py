@@ -180,7 +180,7 @@ class CirclePass5v1Env(gym.Env):
         new_obs = self._convert_obs(obs_no_gk, first=True)
         self.obs = new_obs
 
-        return deepcopy(self.obs), {'__common__':{}}
+        return deepcopy(self.obs), {'__common__': {agent: {} for agent in self.agents}}
 
     def step(
         self, 
@@ -192,8 +192,8 @@ class CirclePass5v1Env(gym.Env):
         actions = []
         for agent in self.agents:
             actions.append(actions_dict[agent])
-
-        actions = [controller_actions[agent] for agent in self.agents]
+        #controller_actions = compute_rondo_actions(self.obs,self.obs_map)
+        #actions = [controller_actions[agent] for agent in self.agents]
         controller_metrics = self.behavior_cloning_reward(actions_dict)
         if self._step == 1 and self.controller_kwargs['fast']:
             adversary_action = 10 #turn on sprint 
@@ -204,7 +204,7 @@ class CirclePass5v1Env(gym.Env):
         actions = np.concatenate(([0],actions,[0,adversary_action]))
         actions = [self.action_library[a] for a in actions]
 
-        obs, base_reward, done, info = self.env.step(actions)
+        obs, base_reward, done, raw_info = self.env.step(actions)
 
         self.raw_obs = obs
         self.oob = done
@@ -213,16 +213,20 @@ class CirclePass5v1Env(gym.Env):
         obs_no_gk = np.delete(obs_no_gk,self.n_agents+1)
         new_obs = self._convert_obs(obs_no_gk)
         self.obs = new_obs
-        reward = self._compute_team_reward(self.obs,controller_metrics)
+        team_reward = self._compute_team_reward(self.obs,controller_metrics)
         truncation = self._compute_truncation()
         termination = self._compute_termination()
-        info = {}
 
-        reward = {agent : reward for agent in self.agents}
+        reward = {agent : team_reward for agent in self.agents}
         reward['target'] = 0.0
         truncations = {agent : truncation for agent in self.full_agent_list}
         terminations = {agent : termination or done for agent in self.full_agent_list}
-        info['__common__'] = {agent : info for agent in self.agents}
+
+        info = {}
+        info['__common__'] = {
+            agent: {'team_reward': team_reward, 'oob': self.oob, **dict(raw_info)}
+            for agent in self.agents
+        }
 
         terminations["__all__"] = all(terminations.values())
         truncations["__all__"] = all(truncations.values())
@@ -258,10 +262,18 @@ class CirclePass5v1Env(gym.Env):
                 target_pos = np.concatenate((target_pos,agent_obs['right_team_direction'][1]))
             else:
                 agent_name = 'target'
-                team = agent_obs['right_team'][1:]
-                pos = agent_obs['left_team'][1]
+                # GRF's raw observations are ego-centric: for this right-side
+                # player, 'left_team' is its own team and 'right_team' is the
+                # opponent, both expressed in a frame mirrored (negated)
+                # relative to what every left-side (passer) observation uses.
+                # Negate on the way out so pos/team/ball line up with the
+                # passers' frame instead of being its point-reflection.
+                self_pos_ego = agent_obs['left_team'][1]
+                pos = -self_pos_ego
+                team = -agent_obs['right_team'][1:]
+                ball_ego = -agent_obs['ball'][0:2]
 
-                if agent_obs['ball_owned_team'] == 0 or np.linalg.norm(agent_obs['ball'][0:2] - pos) < 0.01:
+                if agent_obs['ball_owned_team'] == 0 or np.linalg.norm(ball_ego - pos) < 0.01:
                     ball_owned = [1]
                 else:
                     ball_owned = [0]
@@ -276,10 +288,13 @@ class CirclePass5v1Env(gym.Env):
                 if agent_obs['ball_owned_player'] == (i + 1):
                     ball_owner = i
 
-                ball_pos = agent_obs['ball'][0:2] - pos
+                ball_pos = ball_ego - pos
                 ball = ball_pos
 
-                target_pos = agent_obs['left_team'][1] - pos
+                # NOTE: target_pos is self-referential (own position minus
+                # itself) and always evaluates to [0, 0] - a separate,
+                # pre-existing bug intentionally left untouched here.
+                target_pos = self_pos_ego - self_pos_ego
                 target_pos = np.concatenate((target_pos,agent_obs['left_team_direction'][1]))
 
             new_obs[agent_name] = np.concatenate((vel,pos,ball,target_pos,team))

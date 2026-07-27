@@ -290,7 +290,8 @@ class FootballParticleCluster(ParticleCluster):
                 temp_obs[obs_map['team']] = team_positions_i
             else:
                 temp_obs[obs_map['target_obs']] = team_positions_i
-                temp_obs[obs_map['ball_pos']] = ball_position
+                temp_obs[obs_map['ball_pos']] = ball_position - particle.position
+                temp_obs[obs_map['target_ball']] = ball_position - particle.position
 
             vel_cmd = self.control_func(temp_obs,obs_map)
             self.last_vel_cmds.append(vel_cmd)
@@ -320,7 +321,7 @@ class PredatorPreyParticleFilter:
         agent_control_function,
         target_control_function,
         num_particles: int = 100,
-        resample_threshold: float = 3.0,
+        resample_threshold: float = 8.0,
         std_dev: float = 0.2,
         max_speed: float = 1.0,
         speed_ratio: float = 0.4,
@@ -473,8 +474,8 @@ class FootballParticleFilter(PredatorPreyParticleFilter):
         target_start_pos: list[float],
         agent_control_function,
         target_control_function,
-        num_particles: int = 10,
-        resample_threshold: float = 0.06,
+        num_particles: int = 100,
+        resample_threshold: float = 0.5,
         std_dev: float = 0.2,
         max_speed: float = 1.0,
         speed_ratio: float = 0.5,
@@ -510,7 +511,7 @@ class FootballParticleFilter(PredatorPreyParticleFilter):
             target_control_function,
             num_particles=num_particles,
             mean_pos=self.target_pos,
-            std_dev=np.ones(self.dim) * self.std_dev,
+            std_dev=np.ones(self.dim) * self.std_dev * 3,
             resample_threshold=resample_threshold,
             dim=self.dim,
             max_speed=self.max_speed*self.speed_ratio,
@@ -636,7 +637,9 @@ class FootballParticleFilter(PredatorPreyParticleFilter):
                 if passed:
                     self._begin_pass(team_ordered[idx], self.clusters[name].estimate_direction(), team_ordered, idx)
             else:
-                self.clusters[name].propagate(self.dt, np.concatenate((current_obs,np.zeros((self.dim,)))), target, team_ordered.flatten(), self.ball_owner, self.ball_position, self.obs_map)
+                self.clusters[name].propagate(self.dt, np.concatenate((current_obs,np.zeros((self.dim,)))), target, team_ordered.flatten(), self.ball_owner, -self.ball_position, self.obs_map)
+
+        current_obs[self.obs_map['self_anchor']] = self.init_obs[self.agent_name][self.obs_map['self_anchor']]
 
     def _begin_pass(self, passer_pos, passer_dir, team_ordered, passer_idx):
         passer_norm = np.linalg.norm(passer_dir)
@@ -671,5 +674,6 @@ class FootballParticleFilter(PredatorPreyParticleFilter):
                 obs[name]['vel'] = vel
 
         obs['ball_owner'] = self.ball_owner
+        obs['ball_pos'] = self.ball_position
 
         return obs

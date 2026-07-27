@@ -321,7 +321,7 @@ class CaravanAviary(BaseRLAviary):
         obs, infos = super().reset(seed=seed, options=options)
         self.obs = obs
 
-        return deepcopy(obs), {'__common__':{}}
+        return deepcopy(obs), {'__common__': self._computeInfo()}
 
     def step(self, action_dict):
         self._step += 1
@@ -348,7 +348,7 @@ class CaravanAviary(BaseRLAviary):
             obs, rewards, terminations, truncations, infos = super().step(full_action)
         self.obs = obs
 
-        return deepcopy(obs), rewards, terminations, truncations, {'__common__':{}}
+        return deepcopy(obs), rewards, terminations, truncations, {'__common__': self._computeInfo()}
 
     def _scripted_target_action(
             self,

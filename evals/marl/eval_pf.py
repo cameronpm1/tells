@@ -2,6 +2,7 @@ import os
 import ray
 import torch
 import numpy as np
+from typing import Optional
 
 from ray.rllib.policy.policy import Policy
 from ray.tune.registry import register_env
@@ -19,7 +20,8 @@ def eval(
         checkpoint_dir:str = None,
         n_runs: int = 1,
         belief_dir: str = None,
-        belief_config_dir: str = None
+        belief_config_dir: str = None,
+        collect_results: bool = False,
     ):
 
     '''
@@ -41,6 +43,7 @@ def eval(
         cfg,
         seed=cfg['seed'],
         wrap='pf',
+        eval=True,
         render_mode=cfg['env'].get('render_mode', None),
         belief_kwargs=belief_kwargs,
     )
@@ -57,6 +60,12 @@ def eval(
     save_dir = os.path.join(checkpoint_dir,'videos_pf')
     mkdir(save_dir)
 
+    if collect_results:
+        results_save_dir = os.path.join(checkpoint_dir,'results_pf')
+        mkdir(results_save_dir)
+    else:
+        results_save_dir = None
+
     for i in range(n_runs):
 
         eval_single_episode(
@@ -64,7 +73,8 @@ def eval(
             cfg=cfg,
             algo=algo,
             save_dir=save_dir,
-            idx=i
+            idx=i,
+            results_save_dir=results_save_dir,
         )
 
 def eval_single_episode(
@@ -73,6 +83,7 @@ def eval_single_episode(
         algo,
         save_dir:str = '',
         idx:int=0,
+        results_save_dir: Optional[str] = None
     ):
     '''
     test sim for single episode
@@ -109,6 +120,9 @@ def eval_single_episode(
     policy_list = cfg['policy_list']
     policy_mapping_fn = marl_policy_mapping_fn
 
+    if results_save_dir is not None:
+        results = {}
+
     while not done["__all__"]:
 
         actions = {}
@@ -140,9 +154,17 @@ def eval_single_episode(
 
         images.append(env.render_rgb())
 
+        if results_save_dir is not None:
+            results[str(step_count)] = [obs, rewards, terminations, truncations, infos]
+
     save_file = str(os.path.join(save_dir,str(idx)+'.gif'))
     print('generating video in ' + save_file)
     save_rgb_gif(images,save_file)
+
+    if results_save_dir is not None:
+        results['obs_map'] = env.obs_map
+        save_path = str(os.path.join(results_save_dir,str(idx)+'.npz'))
+        np.savez(save_path,**results)
 
     print("\n==== EVAL RESULTS ====")
     print(f"Reward: {episode_rewards[-1]}")

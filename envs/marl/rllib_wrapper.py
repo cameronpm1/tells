@@ -146,7 +146,7 @@ class RLLibWrapper(MultiAgentEnv):
                 errors.append(error)
                 predictions[agent] = team_state
                 #compute individual reward penalty for deviation of belief model
-                rew[agent] = rew[agent] - error * self.env.reward_cfg['belief_dev_scale']
+                #rew[agent] = rew[agent] - error * self.env.reward_cfg['belief_dev_scale']
                 if self.eval:
                     if self.belief_model.vae:
                         infos['__common__']['sampled_predictions'][agent] = self.belief_model.sample_stochastic(model_input).detach().cpu().numpy()[:, obs_idxs]
