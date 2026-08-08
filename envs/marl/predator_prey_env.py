@@ -15,6 +15,10 @@ from controllers.predator_prey_control import compute_slot_actions
 
 GRID_SIZE = 10
 
+# mean of force_share * nn_factor over 500 controller-driven episodes
+# (evals/marl/collect_decomposed_rewards.py), used to normalize decompose_reward
+CONTROLLER_MEAN_DECOMPOSED_REWARD = 0.2246
+
 class PredatorPreyEnv(gymnasium.Env):
 
     '''
@@ -312,6 +316,65 @@ class PredatorPreyEnv(gymnasium.Env):
             team_reward += self.reward_cfg['success_bonus']
 
         return team_reward
+
+    def team_error(
+        self, 
+        estimate: np.ndarray,
+        agent: str
+    ):
+
+        # Reshape to (N, 2, 3)
+        pred = estimate[self.obs_map['team']].reshape(-1, 2, 2)
+        target = self.obs[agent][self.obs_map['team']].reshape(-1, 2, 2)
+        # Direct assignment distances
+        direct = (
+            np.linalg.norm(pred[:, 0] - target[:, 0], axis=1) +
+            np.linalg.norm(pred[:, 1] - target[:, 1], axis=1)
+        )
+
+        # Swapped assignment distances
+        swapped = (
+            np.linalg.norm(pred[:, 0] - target[:, 1], axis=1) +
+            np.linalg.norm(pred[:, 1] - target[:, 0], axis=1)
+        )
+
+        # Take minimum per sample, then sum batch
+        return np.minimum(direct, swapped).sum()
+
+    def decompose_reward(
+        self,
+        joint_reward,
+        obs
+    ):
+        dist_norm = 2
+
+        forces = {}
+        for agent in self.agents:
+            diff = obs[agent][self.obs_map['target_pos']]
+            dist = np.linalg.norm(diff) + 1e-6
+            local_gain = self.controller_cfg['prey_sensitivity']
+            if dist < self.controller_cfg['prey_avoid_radius']:
+                local_gain *= self.controller_cfg['prey_avoid_gain']
+            forces[agent] = local_gain * (diff / dist ** self.controller_cfg['force_exponent'])
+
+        force_norms = {agent: np.linalg.norm(force) for agent, force in forces.items()}
+        total_force_norm = sum(force_norms.values()) + 1e-6
+
+        decomposed_reward = {}
+        for agent in self.agents:
+            self_pos = obs[agent][self.obs_map['self_pos']]
+            neighbor_dists = [
+                np.linalg.norm(self_pos - obs[other][self.obs_map['self_pos']])
+                for other in self.agents if other != agent
+            ]
+            nearest_dist = min(neighbor_dists) if neighbor_dists else 0.0
+            nn_factor = np.clip(nearest_dist, 0.0, dist_norm) / dist_norm
+
+            force_share = force_norms[agent] / total_force_norm
+            decomposed_reward[agent] = (force_share * nn_factor * joint_reward) #/ CONTROLLER_MEAN_DECOMPOSED_REWARD
+
+        return decomposed_reward
+
 
 class ScenarioEnv(SimpleEnv):
 

@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 
 import torch
@@ -5,65 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from torch.distributions.normal import Normal
-
-class NN2CNN(nn.Module):
-
-	def __init__(self, 
-                input_channels:int,
-                output_channels:int,
-				p_mc_dropout = 0.5) :
-		
-		super().__init__()
-		
-		self.p_mc_dropout = p_mc_dropout
-
-		self.linear1 = nn.Linear(input_channels,256) 
-		self.linear2 = nn.Linear(256,1024) 
-		self.linear3 = nn.Linear(1024,2048)
-		self.linear4 = nn.Linear(2048,4096)
-		# project to spatial latent
-		self.linear5 = nn.Linear(4096, 256 * 8 * 8)
-
-		# ---------- CNN decoder ----------
-		self.decoder = nn.Sequential(
-			nn.ConvTranspose2d(256, 128, 4, 2, 1),  # 8 → 16
-			nn.BatchNorm2d(128),
-			nn.ReLU(inplace=True),
-
-			nn.ConvTranspose2d(128, 64, 4, 2, 1),   # 16 → 32
-			nn.BatchNorm2d(64),
-			nn.ReLU(inplace=True),
-
-			# 32 → 50 exactly
-			nn.ConvTranspose2d(64, 32, kernel_size=19, stride=1, padding=0),
-			nn.BatchNorm2d(32),
-			nn.ReLU(inplace=True),
-
-			nn.Conv2d(32, 1, kernel_size=3, padding=1),
-			nn.Sigmoid()
-		)
-		
-													
-		
-	def forward(self, x, stochastic=True):
-		x = F.relu(self.linear1(x))
-		x = F.relu(self.linear2(x))
-		x = F.relu(self.linear3(x))
-		x = F.relu(self.linear4(x))
-
-		if stochastic:
-			x = F.dropout(x, p=self.p_mc_dropout, training=True)
-
-		x = self.linear5(x)
-		x = x.view(x.size(0), 256, 8, 8)
-
-		x = self.decoder(x)
-
-		# center crop 128x128 -> 100x100
-		#start = (x.size(-1) - 50) // 2
-		#x = x[:, :, start:start+50, start:start+50]
-
-		return x
 
 class football_NN(nn.Module):
 
@@ -96,6 +39,97 @@ class football_NN(nn.Module):
 		x = self.linear5(x)
 
 		return x
+
+class fire_NN(nn.Module):
+	'''
+	two-headed belief model for the fire env.
+
+	input is the flattened array produced by fire_obs_packaging:
+	[ fire_maps (num_frames * window_size * window_size),
+	  pos_change ((min_obs-1) * 2),
+	  last_team_obs ((n_agents-1) * 2) ]
+
+	the fire_maps prefix is reshaped back into a (num_frames, window_size,
+	window_size) image stack and fed to a cnn head; everything after it
+	(pos over time + last team estimate) is fed to a linear head. the two
+	heads are fused before the output layer.
+	'''
+
+	def __init__(self,
+                input_channels:int,
+                output_channels:int,
+				window_size:int = 61,
+				num_frames:int = 10,
+				p_mc_dropout = 0.5) :
+
+		super().__init__()
+
+		self.loss = FirePermutationInvariantLoss()
+		self.val_loss = FirePermutationInvariantLoss()
+
+		self.p_mc_dropout = p_mc_dropout
+
+		self.window_size = window_size
+		self.num_frames = num_frames
+		self.fire_input_size = num_frames * window_size * window_size
+		self.linear_input_size = input_channels - self.fire_input_size
+
+		# ---------- cnn head: reconstructed fire maps over time ----------
+		self.cnn_head = nn.Sequential(
+			nn.Conv2d(num_frames, 32, kernel_size=5, stride=2, padding=2),
+			nn.ReLU(inplace=True),
+			nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),
+			nn.ReLU(inplace=True),
+			nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+			nn.ReLU(inplace=True),
+			# AdaptiveAvgPool2d has no deterministic CUDA backward; conv stack
+			# always yields an 8x8 map here, so a plain AvgPool2d(2) is
+			# equivalent and keeps training deterministic
+			nn.AvgPool2d(kernel_size=2, stride=2),
+		)
+		self.cnn_proj = nn.Linear(128 * 4 * 4, 256)
+
+		# ---------- linear head: pos over time + last team estimate ----------
+		self.linear_head = nn.Sequential(
+			nn.Linear(self.linear_input_size, 128),
+			nn.ReLU(inplace=True),
+			nn.Linear(128, 256),
+			nn.ReLU(inplace=True),
+		)
+
+		# ---------- fusion ----------
+		self.fusion = nn.Sequential(
+			nn.Linear(256 + 256, 256),
+			nn.ReLU(inplace=True),
+			nn.Linear(256, 128),
+			nn.ReLU(inplace=True),
+			nn.Linear(128, 64),
+			nn.ReLU(inplace=True),
+		)
+		self.out = nn.Linear(64, output_channels)
+
+	def forward(self, x):
+		unbatched = x.dim() == 1
+		if unbatched:
+			x = x.unsqueeze(0)
+
+		fire_x = x[:, :self.fire_input_size].contiguous().view(
+			-1, self.num_frames, self.window_size, self.window_size
+		)
+		linear_x = x[:, self.fire_input_size:]
+
+		fire_feat = self.cnn_head(fire_x)
+		fire_feat = torch.flatten(fire_feat, 1)
+		fire_feat = F.relu(self.cnn_proj(fire_feat))
+
+		linear_feat = self.linear_head(linear_x)
+
+		combined = torch.cat((fire_feat, linear_feat), dim=1)
+		combined = self.fusion(combined)
+
+		out = self.out(combined)
+
+		return out.squeeze(0) if unbatched else out
 
 class football_VAE_NN(nn.Module):
 	def __init__(self, input_channels, output_channels, latent_dim=16):
@@ -208,6 +242,38 @@ class predator_prey_NN(nn.Module):
 
 		return x
 
+class drones_NN(nn.Module):
+
+	def __init__(self,
+                input_channels:int,
+                output_channels:int,
+				p_mc_dropout = 0.5) :
+
+		super().__init__()
+
+		self.loss = DronesPermutationInvariantMSE()
+		self.val_loss = DronesPermutationInvariantMSE()
+
+		self.p_mc_dropout = p_mc_dropout
+
+		self.linear1 = nn.Linear(input_channels,128)
+		self.linear2 = nn.Linear(128,256)
+		self.linear3 = nn.Linear(256,128)
+		self.linear4 = nn.Linear(128,64)
+		self.linear5 = nn.Linear(64,output_channels)
+
+
+
+	def forward(self, x):
+
+		x = nn.functional.relu(self.linear1(x))
+		x = nn.functional.relu(self.linear2(x))
+		x = nn.functional.relu(self.linear3(x))
+		x = nn.functional.relu(self.linear4(x))
+		x = self.linear5(x)
+
+		return x
+
 class PredPreyPermutationInvariantMSE(nn.Module):
 
 	def __init__(
@@ -298,22 +364,22 @@ class DronesPermutationInvariantMSE(nn.Module):
 		pred:   (batch, num_frames * 2 * dim)
 		target: (batch, num_frames * 2 * dim)
 		"""
-		# one shared direct/swapped teammate assignment across all
-		# time frames, so slot identity is consistent between the
-		# previous and current state estimates
+		# each time frame picks its own direct/swapped teammate
+		# assignment independently, so the previous and current
+		# state estimates don't have to agree on slot identity
 		num_frames = pred.shape[1] // 6
 
 		pred = pred.view(-1, num_frames, 2, 3)
 		target = target.view(-1, num_frames, 2, 3)
 
 		# direct assignment
-		loss1 = ((pred - target) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+		loss1 = ((pred - target) ** 2).mean(dim=3).sum(dim=2)
 
 		# swapped assignment
-		loss2 = ((pred - target.flip(2)) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+		loss2 = ((pred - target.flip(2)) ** 2).mean(dim=3).sum(dim=2)
 
-		# take minimum per sample
-		loss = torch.min(loss1, loss2)
+		# take minimum per frame, then sum across frames
+		loss = torch.min(loss1, loss2).sum(dim=1)
 
 		return loss.mean()
 
@@ -343,20 +409,58 @@ class DronesPermutationInvariantVAEMSE(nn.Module):
 		target,
 		return_parts=False,
 	):
-		# one shared direct/swapped teammate assignment across all
-		# time frames, so slot identity is consistent between the
-		# previous and current state estimates
+		# each time frame picks its own direct/swapped teammate
+		# assignment independently, so the previous and current
+		# state estimates don't have to agree on slot identity
 		num_frames = recon.shape[1] // 6
 
 		recon = recon.view(-1, num_frames, 2, 3)
 		target = target.view(-1, num_frames, 2, 3)
 
-		mse_direct = ((recon - target) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
-		mse_swapped = ((recon - target.flip(2)) ** 2).mean(dim=3).sum(dim=2).sum(dim=1)
+		mse_direct = ((recon - target) ** 2).mean(dim=3).sum(dim=2)
+		mse_swapped = ((recon - target.flip(2)) ** 2).mean(dim=3).sum(dim=2)
 
-		recon_loss = torch.min(mse_direct, mse_swapped)
+		recon_loss = torch.min(mse_direct, mse_swapped).sum(dim=1)
 
 		return recon_loss.mean()
+
+class FirePermutationInvariantLoss(nn.Module):
+
+	def __init__(
+			self,
+		):
+		super().__init__()
+
+		# the 3 teammates within a team estimate are interchangeable,
+		# so try every ordering of them rather than just a flip
+		self.perms = list(itertools.permutations(range(3)))
+
+	def forward(self, pred, target):
+		return self.permutation_invariant_loss(pred, target)
+
+	def permutation_invariant_loss(self, pred, target):
+		"""
+		pred:   (batch, num_team_estimates * 3 * 2)
+		target: (batch, num_team_estimates * 3 * 2)
+		"""
+		# each team estimate picks its own teammate-order assignment
+		# independently, so the two estimates don't have to agree on
+		# slot identity
+		num_estimates = pred.shape[1] // 6
+
+		pred = pred.view(-1, num_estimates, 3, 2)
+		target = target.view(-1, num_estimates, 3, 2)
+
+		losses = [
+			((pred - target[:, :, perm, :]) ** 2).mean(dim=3).sum(dim=2)
+			for perm in self.perms
+		]
+
+		# take minimum per team estimate, then sum across estimates
+		loss = torch.stack(losses, dim=0).min(dim=0).values.sum(dim=1)
+
+		return loss.mean()
+
 
 class FootballVAEMSE(nn.Module):
 

@@ -21,6 +21,7 @@ def eval(
         n_runs: int = 1,
         belief_dir: str = None,
         belief_config_dir: str = None,
+        save_videos: bool = True,
         collect_results: bool = False,
     ):
 
@@ -57,8 +58,11 @@ def eval(
         print('No model directory provided...')
         exit()
 
-    save_dir = os.path.join(checkpoint_dir,'videos_pf')
-    mkdir(save_dir)
+    if save_videos:
+        save_dir = os.path.join(checkpoint_dir,'videos_pf')
+        mkdir(save_dir)
+    else:
+        save_dir = ''
 
     if collect_results:
         results_save_dir = os.path.join(checkpoint_dir,'results_pf')
@@ -74,6 +78,7 @@ def eval(
             algo=algo,
             save_dir=save_dir,
             idx=i,
+            save_video=save_videos,
             results_save_dir=results_save_dir,
         )
 
@@ -83,6 +88,7 @@ def eval_single_episode(
         algo,
         save_dir:str = '',
         idx:int=0,
+        save_video: bool = True,
         results_save_dir: Optional[str] = None
     ):
     '''
@@ -152,14 +158,16 @@ def eval_single_episode(
         if infos.get('__common__').get('belief_error') is not None:
             errors.append(infos['__common__']['belief_error'])
 
-        images.append(env.render_rgb())
+        if save_video:
+            images.append(env.render_rgb())
 
         if results_save_dir is not None:
             results[str(step_count)] = [obs, rewards, terminations, truncations, infos]
 
-    save_file = str(os.path.join(save_dir,str(idx)+'.gif'))
-    print('generating video in ' + save_file)
-    save_rgb_gif(images,save_file)
+    if save_video:
+        save_file = str(os.path.join(save_dir,str(idx)+'.gif'))
+        print('generating video in ' + save_file)
+        save_rgb_gif(images,save_file)
 
     if results_save_dir is not None:
         results['obs_map'] = env.obs_map

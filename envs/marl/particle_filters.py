@@ -4,6 +4,8 @@ from typing import List
 from copy import deepcopy
 import matplotlib.pyplot as plt
 
+from controllers.fire_control import ACTION_LIBRARY
+
 class Particle:
     def __init__(self, 
         position, 
@@ -310,6 +312,71 @@ class FootballParticleCluster(ParticleCluster):
         else:
             return 0 #no pass
 
+class FireDroneParticleCluster(ParticleCluster):
+    def __init__(self,
+        control_function,
+        num_particles: int = 100,
+        mean_pos: list[float] = [0.0,0.0],
+        std_dev: list[float] = [0.0,0.0],
+        resample_threshold: float = 50,
+        extinguish_threshold: float = 0.3,
+        dim: int = 2,
+        max_speed: float = 1.0,
+        dt: float = 1.0,
+        target = False,
+        process_noise_std_pos: float = 0.001,
+        process_noise_std_dir: float = 0.01,
+    ):
+        super().__init__(
+            control_function,
+            num_particles=num_particles,
+            mean_pos=mean_pos,
+            std_dev=std_dev,
+            resample_threshold=resample_threshold,
+            dim=dim,
+            max_speed=max_speed,
+            dt=dt,
+            target=target,
+        )
+
+        self.extinguish_threshold = extinguish_threshold
+        self.process_noise_std_pos = process_noise_std_pos
+        self.process_noise_std_dir = process_noise_std_dir
+
+    def propagate(self, dt, target, team_positions, name):
+
+        num_particles = len(self.particles)
+
+        extinguish_count = 0
+        self.last_vel_cmds = []
+        obs = {}
+        obs['target'] = deepcopy(target)
+        for agent in team_positions.keys():
+            if name != agent:
+                obs[agent] = {}
+                obs[agent]['self_pos'] = deepcopy(team_positions[agent])
+
+        for i, particle in enumerate(self.particles):
+            temp_obs = deepcopy(obs)
+            temp_obs[name] = {'self_pos': particle.position}
+
+            action = self.control_func(temp_obs)[name]
+
+            if action == 9:
+                extinguish_count += 1
+                vel_cmd = np.zeros((2,))
+            else:
+                vel_cmd = ACTION_LIBRARY[action].astype(float)
+
+            particle.add_control(vel_cmd)
+            particle.propagate(dt, process_noise_std_pos=self.process_noise_std_pos, process_noise_std_dir=self.process_noise_std_dir)
+
+        if extinguish_count/num_particles > self.extinguish_threshold:
+            return 1 #extinguish
+        else:
+            return 0 #no pass
+
+
 
 class PredatorPreyParticleFilter:
     def __init__(
@@ -475,8 +542,8 @@ class FootballParticleFilter(PredatorPreyParticleFilter):
         agent_control_function,
         target_control_function,
         num_particles: int = 100,
-        resample_threshold: float = 0.5,
-        std_dev: float = 0.2,
+        resample_threshold: float = 3.0,
+        std_dev: float = 0.4,
         max_speed: float = 1.0,
         speed_ratio: float = 0.5,
         ball_speed: float = 0.1,
@@ -677,3 +744,245 @@ class FootballParticleFilter(PredatorPreyParticleFilter):
         obs['ball_pos'] = self.ball_position
 
         return obs
+
+class FireParticleFilter(PredatorPreyParticleFilter):
+    GREEN, RED, BLACK, WHITE, BLUE = 0, 1, 2, 3, 4
+
+    def __init__(
+        self,
+        obs_map,
+        agent_name,
+        agent_start_pos: dict,
+        target_start_pos: list[float],
+        agent_control_function,
+        target_control_function,
+        num_particles: int = 10,
+        resample_threshold: float = 50.0,
+        std_dev: float = 1.0,
+        max_speed: float = 1.0,
+        speed_ratio: float = 0.5,
+        measurement_std: float = 0.3,
+        dt: float = 1.0
+    ):
+        self.obs_map = obs_map
+        self.agent_name = agent_name
+        self.n_agents = len(agent_start_pos.keys())
+        self.target_pos = np.array(target_start_pos, dtype=float)
+        self.clusters = {}
+        self.dim = len(target_start_pos)
+        self.dt = dt
+        self.max_speed = max_speed
+        self.std_dev = std_dev
+        self.measurement_std = measurement_std
+        self.target_control_function = target_control_function
+
+        for name, pos in agent_start_pos.items():
+            self.clusters[name] = FireDroneParticleCluster(
+                agent_control_function,
+                num_particles=num_particles,
+                mean_pos=np.array(pos, dtype=float),
+                std_dev=np.ones(self.dim) * self.std_dev,
+                resample_threshold=resample_threshold,
+                dim=self.dim,
+                max_speed=self.max_speed,
+                dt=dt,
+                target=False,
+            )
+
+        self.clusters['target'] = None
+
+    def reset(
+        self,
+        obs: dict,
+    ):
+        self.clusters['target'] = obs['target']
+        for name in self.clusters.keys():
+            if name == 'target':
+                continue
+            mean_pos = np.array(obs[name]['self_pos'], dtype=float)
+            self.clusters[name].initialize_gaussian(mean_pos,np.ones(self.dim) * self.std_dev)
+
+        self.observation_range = (len(obs[self.agent_name]['fire']) - 1) // 2
+
+        self.fire = obs['target']
+        self.fire_confidence = 1.0
+
+        self.extinguish_confidence_decay = ((self.observation_range * 2 + 1) ** 2 - 100 ) / ((self.observation_range * 2 + 1) ** 2)
+
+    def update_observation(
+        self,
+        agent_name: str,
+        observed_value,
+        action = None,
+        measurement_std: float = None,
+    ):
+        if agent_name == 'target':
+            self.fire = deepcopy(observed_value)
+            self.fire_confidence = 1.0
+            return
+
+        if agent_name not in self.clusters:
+            raise ValueError(f"Agent name '{agent_name}' not found in clusters.")
+
+        if measurement_std is None:
+            measurement_std = self.measurement_std
+
+        force_reset = self.clusters[agent_name].update_weights(observed_value, measurement_std)
+        if not force_reset:
+            self.clusters[agent_name].resample()
+
+    def propagate_all(self, current_obs):
+
+        # Get estimated mean positions
+        team_pos = {}
+        for name in self.clusters.keys():
+            if name == 'target':
+                continue
+            mean_pos, _ = self.clusters[name].estimate_mean_position()
+            team_pos[name] = mean_pos
+
+        team_pos[self.agent_name] = current_obs['self_pos']
+
+        self.neighboring = self._count_green_neighboring_red(self.fire)
+        self.fire_confidence *= ((self.observation_range * 2 + 1) ** 2 - self.neighboring ) / ((self.observation_range * 2 + 1) ** 2)
+        self.fire = self.target_control_function(self.fire)
+
+        target = self.fire
+
+        # Propagate predator clusters
+        for name in self.clusters.keys():
+            if name == 'target':
+                continue
+            extinguish = self.clusters[name].propagate(self.dt, target, team_pos, name)
+            if extinguish:
+                pos, _ = self.clusters[name].estimate_mean_position()
+                self.fire, ext_pix = self._extinguish_fire(pos, self.fire)
+                self.fire_confidence *= self.extinguish_confidence_decay
+
+    def get_observation(
+        self,
+        pos,
+    ):
+        obs = {}
+        for name,cluster in self.clusters.items():
+            if name == 'target':
+                continue
+            obs[name] = {}
+            mean_pos, confidence = cluster.estimate_mean_position()
+            obs[name]['pos'] = mean_pos
+            obs[name]['confidence'] = confidence
+
+        obs['target'] = {'confidence': self.fire_confidence}
+        obs[self.agent_name] = self._combine_obs(obs, pos, self.fire)
+
+        return obs
+
+    def _local_fire_window(self, fire_state, agent_pos):
+        r, c = agent_pos
+        radius = self.observation_range
+
+        padded_fire = np.pad(
+            fire_state,
+            pad_width=radius,
+            mode="constant",
+            constant_values=self.WHITE,
+        )
+
+        rp = r + radius
+        cp = c + radius
+
+        window = padded_fire[
+            rp - radius: rp + radius + 1,
+            cp - radius: cp + radius + 1,
+        ]
+
+        return window.astype(np.float32)
+
+    def _combine_obs(self, obs, pos, fire):
+        window_size = self.observation_range * 2 + 1
+        partial_obs = self._local_fire_window(fire, pos)
+
+        team = []
+
+        for name in self.clusters.keys():
+            if name == self.agent_name or name == 'target':
+                continue
+
+            team_pos = obs[name]['pos'] - pos
+            team.append(team_pos)
+            rel_r = int(round(team_pos[0]))
+            rel_c = int(round(team_pos[1]))
+
+            if abs(rel_r) <= self.observation_range and abs(rel_c) <= self.observation_range:
+                cross_r = rel_r + self.observation_range
+                cross_c = rel_c + self.observation_range
+                for rr, cc in [(cross_r, cross_c), (cross_r - 1, cross_c), (cross_r + 1, cross_c), (cross_r, cross_c - 1), (cross_r, cross_c + 1)]:
+                    if 0 <= rr < window_size and 0 <= cc < window_size:
+                        partial_obs[rr, cc] = self.BLUE
+        self.team = np.array(team).flatten()
+        return partial_obs[..., None]
+
+    def _extinguish_fire(
+        self,
+        pos,
+        fire,
+        max_extinguish_prob=1.0,
+        decay_rate=0.05,
+        extinguish_radius=5,
+    ):
+        """
+        Extinguish nearby fire cells probabilistically.
+
+        Probability decreases with distance from the drone:
+            p = max_extinguish_prob * exp(-decay_rate * distance)
+
+        Cells changed:
+            RED -> BLACK with probability p
+            GREEN stays GREEN
+            BLACK stays BLACK
+        """
+
+        r, c = int(round(pos[0])), int(round(pos[1]))
+
+        rows, cols = fire.shape
+
+        r_min = max(0, r - extinguish_radius)
+        r_max = min(rows, r + extinguish_radius + 1)
+        c_min = max(0, c - extinguish_radius)
+        c_max = min(cols, c + extinguish_radius + 1)
+
+        rr, cc = np.meshgrid(
+            np.arange(r_min, r_max),
+            np.arange(c_min, c_max),
+            indexing="ij",
+        )
+        distance = np.sqrt((rr - r) ** 2 + (cc - c) ** 2)
+
+        window = fire[r_min:r_max, c_min:c_max]
+        in_range_red = (window == self.RED) & (distance <= extinguish_radius)
+
+        extinguish_prob = max_extinguish_prob * np.exp(-decay_rate * distance)
+        trial = np.random.random(distance.shape) < extinguish_prob
+
+        newly_extinguished = in_range_red & trial
+        window[newly_extinguished] = self.BLACK
+
+        return fire, int(np.sum(newly_extinguished))
+
+    def _count_green_neighboring_red(self, fire):
+
+        red_mask = fire == self.RED
+        green_mask = fire == self.GREEN
+        rows, cols = fire.shape
+
+        padded_red = np.pad(red_mask, 1, mode="constant", constant_values=False)
+        neighbor_offsets = [
+            (-1, 0), (1, 0), (0, -1), (0, 1),
+            (-1, -1), (-1, 1), (1, -1), (1, 1),
+        ]
+
+        adjacent_to_red = np.zeros_like(green_mask)
+        for dr, dc in neighbor_offsets:
+            adjacent_to_red |= padded_red[1 + dr: 1 + dr + rows, 1 + dc: 1 + dc + cols]
+
+        return int(np.sum(green_mask & adjacent_to_red))

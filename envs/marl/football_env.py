@@ -47,6 +47,21 @@ for i in range(5):
 AR = 2.38
 
 
+def _distance_point_to_segment(a: np.ndarray, b: np.ndarray, p: np.ndarray) -> float:
+    '''
+    shortest distance from point p to the segment ab
+    '''
+    ab = b - a
+    ab_len_sq = np.dot(ab, ab)
+    if ab_len_sq < 1e-12:
+        return float(np.linalg.norm(p - a))
+
+    t = np.clip(np.dot(p - a, ab) / ab_len_sq, 0.0, 1.0)
+    closest = a + t * ab
+
+    return float(np.linalg.norm(p - closest))
+
+
 def register_file_as_grf_scenario(scenario_name: str):
     """
     Registers this current Python module as:
@@ -374,6 +389,67 @@ class CirclePass5v1Env(gym.Env):
             return True
         else:
             return False
+
+    def team_error(
+        self, 
+        estimate: np.ndarray,
+        agent: str
+    ):
+
+        # Reshape to (N, 2, 3)
+        pred = np.concatenate([estimate[self.obs_map['team']],estimate[self.obs_map['ball_pos']]], axis=0).reshape(-1,2)
+        target = np.concatenate([self.obs[agent][self.obs_map['team']],self.obs[agent][self.obs_map['ball_pos']]], axis=0).reshape(-1,2)
+
+
+        return np.linalg.norm(pred-target,axis=1).sum()
+
+    def _ball_owner_index(self, obs):
+        owner = np.where(obs['agent0'][self.obs_map['ball_owner']] == 1)[0]
+
+        return int(owner[0]) if len(owner) > 0 else None
+
+    def decompose_reward(
+        self,
+        joint_reward,
+        obs,
+        last_obs,
+    ):
+        '''
+        per-agent contribution scale is 1.0 for whichever agent's possession
+        of the ball just changed to (a completed pass, detected by the
+        ball-owner one-hot differing between obs and last_obs), 0.5 for any
+        other agent that is open - the adversary is more than open_threshold
+        away from the segment between the ball and that agent - and 0.0
+        otherwise
+        '''
+        open_threshold = 0.07
+
+        current_owner = self._ball_owner_index(obs)
+        previous_owner = self._ball_owner_index(last_obs)
+
+        pass_receiver = None
+        if (
+            current_owner is not None
+            and current_owner != previous_owner
+            and current_owner < len(self.agents)
+        ):
+            pass_receiver = self.agents[current_owner]
+
+        decomposed_reward = {}
+        for agent in self.agents:
+            if agent == pass_receiver:
+                contribution_scale = 1.0
+            else:
+                ball_vec = obs[agent][self.obs_map['ball_pos']]
+                target_vec = obs[agent][self.obs_map['target_pos']]
+                adversary_dist = _distance_point_to_segment(np.zeros(2), ball_vec, target_vec)
+                contribution_scale = 0.5 if adversary_dist > open_threshold else 0.0
+
+            decomposed_reward[agent] = contribution_scale * joint_reward
+
+        return decomposed_reward
+
+
 
     def render_rgb_old(self):
         """

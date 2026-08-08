@@ -7,7 +7,7 @@ from evals.marl.observation_packaging import *
 from envs.marl.drones_env import CaravanAviary
 from envs.marl.rllib_wrapper import RLLibWrapper
 from envs.marl.predator_prey_env import PredatorPreyEnv, parallel_env
-from envs.marl.particle_filters import PredatorPreyParticleFilter, DronesParticleFilter, FootballParticleFilter
+from envs.marl.particle_filters import PredatorPreyParticleFilter, DronesParticleFilter, FootballParticleFilter, FireParticleFilter
 
 def make_marl_env(
         config: dict,
@@ -263,6 +263,7 @@ def make_fire_env(
     wrap:bool
         if True wraps env in rllib wrapper
     '''
+    from controllers.fire_control import extinguish_controller
     from envs.marl.fire_env import DroneFireEnv, probabilistic_fire_controller
 
     env = DroneFireEnv(
@@ -270,6 +271,7 @@ def make_fire_env(
         fire_controller=probabilistic_fire_controller,
         controller_kwargs=config['env'].get('controller_kwargs'),
         reward_kwargs = config['env'].get('reward_kwargs'),
+        max_episode_length=config['env']['max_episode_length'],
         **config['env']['env_kwargs'],
     )
 
@@ -277,12 +279,22 @@ def make_fire_env(
         env = RLLibWrapper(
             env=env,
             name='fire',
-            obs_packaging_func=predator_prey_obs_packaging,
+            obs_packaging_func=fire_obs_packaging,
             eval=eval,
-            belief_kwargs=belief_kwargs
+            belief_kwargs=belief_kwargs,
+            noise=config['env']['noise'],
         )
-    elif wrap is None:
-        pass
+    elif wrap == 'pf':
+        env = PFWrapper(
+            env,
+            name='fire',
+            particle_filter = FireParticleFilter,
+            agent_control_function = lambda obs: extinguish_controller(obs, **config['env']['controller_kwargs']),
+            target_control_function = lambda fire: probabilistic_fire_controller(fire),
+            dim=2,
+            eval=eval,
+            belief_kwargs=config['env']['belief_kwargs'],
+        )
     else:
         print('Wrapper not supported for football env...')
 

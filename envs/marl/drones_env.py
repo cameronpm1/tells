@@ -326,6 +326,7 @@ class CaravanAviary(BaseRLAviary):
     def step(self, action_dict):
         self._step += 1
 
+        #action_dict = drone_controller(deepcopy(self.obs), self.obs_map, self.controller_cfg)
         action = []
         for agent in self.agents:
             action.append(self.action_library[action_dict[agent]])
@@ -398,14 +399,17 @@ class CaravanAviary(BaseRLAviary):
         protected_boxes = self._compute_protected_boxes()
     
         if replan or not (0 <= selected_target_box_idx < self.num_goal_boxes) or protected_boxes[selected_target_box_idx] == 1:
-            dists = np.linalg.norm(box_pos[:, None, 0:3] - team_pos[None, :, 0:3],axis=2,)
-            #hovered = np.any((dists <= protection_radius), axis=1)
-            #unhovered_indices = np.where(~hovered)[0]
-            #if len(unhovered_indices) > 0:
-            #    dists_to_adversary = np.linalg.norm(box_pos[unhovered_indices, 0:3] - adversary_pos[0:3],axis=1)
-            #    selected_target_box_idx = int(unhovered_indices[np.argmin(dists_to_adversary)])
-            row_maxes = np.min(dists, axis=1)
-            selected_target_box_idx = int(np.argmax(row_maxes)) #least protected box
+            dists_to_adversary = np.linalg.norm(box_pos[:, 0:3] - adversary_pos[0:3], axis=1)
+            dists_to_protectors = np.linalg.norm(
+                box_pos[:, None, 0:3] - team_pos[None, :, 0:3], axis=2
+            )
+            min_dist_to_protector = np.min(dists_to_protectors, axis=1)
+            guarded = min_dist_to_protector < 2.0
+
+            candidate_dists = np.where(guarded, np.inf, dists_to_adversary)
+            if np.all(np.isinf(candidate_dists)):
+                candidate_dists = dists_to_adversary #every box has a protector within range, ignore guarding
+            selected_target_box_idx = int(np.argmin(candidate_dists)) #closest box with no protector within 2
 
         target_pos = box_pos[selected_target_box_idx]
         force = np.zeros(3, dtype=np.float32)
@@ -456,28 +460,22 @@ class CaravanAviary(BaseRLAviary):
     
     def _compute_spacing_reward(self):
         """
-        Score how evenly protectors are spaced along the goal line: order them
-        by position projected onto the box-line axis, then map the coefficient
-        of variation of the (Euclidean) neighbor-to-neighbor distances to
-        (0, 1], 1 being even. Zeroed out entirely if any neighbor pair is
-        closer than min_spacing_dist.
+        Score how evenly protectors are spaced along the goal line: project
+        protector positions onto the box-line axis, then map the coefficient
+        of variation of the pairwise axis-distances to (0, 1], 1 being even.
+        Zeroed out entirely if any neighbor pair is closer than min_spacing_dist.
         """
-        if self.n_agents < 2:
-            return 0.0
-
-        axis = self.box_state[-1, 0:2] - self.box_state[0, 0:2]
-        axis = axis / max(np.linalg.norm(axis), 1e-6)
+        axis = self.box_state[-1, 0:3] - self.box_state[0, 0:3]
+        axis_norm = np.linalg.norm(axis)
+        axis_unit = axis / axis_norm if axis_norm > 1e-6 else np.array([1.0, 0.0, 0.0], dtype=np.float32)
 
         protector_pos = self._get_team_state()[: self.n_agents, 0:3]
-        ordered_pos = protector_pos[np.argsort(protector_pos[:, 0:2] @ axis)]
-        neighbor_dists = np.linalg.norm(np.diff(ordered_pos, axis=0), axis=-1)
+        protector_proj = protector_pos @ axis_unit
+        protector_pair_dists = np.abs(protector_proj[:, None] - protector_proj[None, :])[np.triu_indices(self.n_agents, k=1)]
+        protector_pair_dists = np.delete(protector_pair_dists, np.argmax(protector_pair_dists))
+        mean_gap = np.mean(protector_pair_dists)
+        return float(np.exp(-np.std(protector_pair_dists) / mean_gap)) if mean_gap > 1e-6 else 0.0
 
-        if neighbor_dists.min() < self.reward_cfg.get('min_spacing_dist', 0.6):
-            return 0.0
-
-        mean_gap = np.mean(neighbor_dists)
-
-        return float(np.exp(-np.std(neighbor_dists) / mean_gap)) if mean_gap > 1e-6 else 0.0
 
     def _computeReward(self):
         """
@@ -492,19 +490,18 @@ class CaravanAviary(BaseRLAviary):
         reward = 0
 
         reward += self.reward_cfg['step_reward']
-
-        #protected = self._compute_protected_boxes()
-        #reward += np.sum(protected) * self.reward_cfg.get('protected_scale', 1)
-
         reward += self.controller_metrics['controller_action_reward'] * self.reward_cfg['bc_scale']
-
         reward += self._compute_spacing_reward() * self.reward_cfg.get('spacing_scale', 0.0)
 
+        target_pos = self._getDroneStateVector(self.target_idx)[0:3]
+        dist_to_closest_box = float(np.min(np.linalg.norm(self.box_state[:, 0:2] - target_pos[0:2], axis=1)))
+        reward += min(dist_to_closest_box, 6.0) * self.reward_cfg.get('target_dist_scale', 1.0)
+
         if self._breached_box():
-            reward -= self.reward_cfg.get('intruded_penalty', 1000)
+            reward -= self.reward_cfg.get('intruded_penalty', 300)
 
         if self._out_of_bounds():
-            reward -= self.reward_cfg.get('oob_penalty', 1000)
+            reward -= self.reward_cfg.get('oob_penalty', 300)
 
         reward_dict = {}
         for agent in self.agents:
@@ -615,7 +612,7 @@ class CaravanAviary(BaseRLAviary):
         else:
             assigned_goals = np.arange(self.n_agents) % self.num_goal_boxes
 
-        spawn_x = rng.uniform(self.box_state[1, 0], self.box_state[2, 0])
+        spawn_x = rng.uniform(self.box_state[0, 0], self.box_state[self.num_goal_boxes - 1, 0])
         box_center = np.array(
             [spawn_x, self.box_state[1, 1], self.box_state[1, 2]],
             dtype=np.float32,
@@ -667,6 +664,31 @@ class CaravanAviary(BaseRLAviary):
             self.close()
         except Exception:
             pass
+
+    def team_error(
+        self, 
+        estimate: np.ndarray,
+        agent: str
+    ):
+
+        # Reshape to (N, 2, 3)
+        pred = estimate[self.obs_map['team']].reshape(-1, 2, 3)
+        target = self.obs[agent][self.obs_map['team']].reshape(-1, 2, 3)
+
+        # Direct assignment distances
+        direct = (
+            np.linalg.norm(pred[:, 0] - target[:, 0], axis=1) +
+            np.linalg.norm(pred[:, 1] - target[:, 1], axis=1)
+        )
+
+        # Swapped assignment distances
+        swapped = (
+            np.linalg.norm(pred[:, 0] - target[:, 1], axis=1) +
+            np.linalg.norm(pred[:, 1] - target[:, 0], axis=1)
+        )
+
+        # Take minimum per sample, then sum batch
+        return np.minimum(direct, swapped).sum()
 
     def render_pybullet_rgb(
         self,

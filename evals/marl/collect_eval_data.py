@@ -120,7 +120,7 @@ def data_worker(
         wrap='rllib',
         eval=True
     )
-    obs_map = env.env.obs_map
+    obs_map = getattr(env.env, 'obs_map', 1)
 
     if checkpoint_dir is not None:
         checkpoint_dir = os.path.abspath(checkpoint_dir)
@@ -147,7 +147,10 @@ def data_worker(
         done = {"__all__": False}
         step = 0
         obs_history = []
-        obs_history.append(obs)
+        if 'fire' in env.name:
+            obs_history.append(infos['__common__']['decomposed_obs'])
+        else:
+            obs_history.append(obs)
 
         #for agent_name in cfg['env']['learned_agent_list']:
 
@@ -165,7 +168,10 @@ def data_worker(
             step += 1
 
             obs, rewards, terminations, truncations, infos = env.step(actions)
-            obs_history.append(obs)
+            if 'fire' in env.name:
+                obs_history.append(infos['__common__']['decomposed_obs'])
+            else:
+                obs_history.append(obs)
 
             done = {
                 "__all__": terminations["__all__"] or truncations["__all__"]

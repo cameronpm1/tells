@@ -225,6 +225,8 @@ class BeliefModel(pl.LightningModule):
                  output_channels: int=1,
                  lr_schedule: list=[],
                  output_noise: float=0.0,
+                 window_size: int=61,
+                 num_frames: int=10,
                  **kwargs,
         ) -> None:
         super().__init__()
@@ -245,8 +247,28 @@ class BeliefModel(pl.LightningModule):
             self.loss_func = self.model.loss #torch.nn.MSELoss()
             self.val_loss_func = self.model.val_loss
             self.vae = True
+        if self.hparams.model_name == 'drones_NN':
+            self.model = drones_NN(self.hparams.input_channels,self.hparams.output_channels)
+            self.loss_func = self.model.loss
+            self.val_loss_func = self.model.val_loss
+            self.vae = False
+        if self.hparams.model_name == 'drones_VAE_NN':
+            self.model = drones_VAE_NN(self.hparams.input_channels,self.hparams.output_channels)
+            self.loss_func = self.model.loss #torch.nn.MSELoss()
+            self.val_loss_func = self.model.val_loss
+            self.vae = True
         if self.hparams.model_name == 'football_NN':
             self.model = football_NN(self.hparams.input_channels,self.hparams.output_channels)
+            self.loss_func = self.model.loss
+            self.val_loss_func = self.model.val_loss
+            self.vae = False
+        if self.hparams.model_name == 'fire_NN':
+            self.model = fire_NN(
+                self.hparams.input_channels,
+                self.hparams.output_channels,
+                window_size=self.hparams.window_size,
+                num_frames=self.hparams.num_frames,
+            )
             self.loss_func = self.model.loss
             self.val_loss_func = self.model.val_loss
             self.vae = False
