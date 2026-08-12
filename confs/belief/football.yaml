@@ -13,7 +13,7 @@ model_name: 'football_NN'
 input_channels: 48
 output_channels: 18
 data_dir: 'data/'
-data_name: 'football_fully_obs_slow'
+data_name: 'football_fully_obs'
 lr_schedule: [200, 500, 1000, 2000, 3000]
 epochs: 4000
 

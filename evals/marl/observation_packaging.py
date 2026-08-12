@@ -5,6 +5,14 @@ from typing import Optional
 from controllers.football_control import get_ball_owner
 from envs.marl.fire_env import DroneFireSim
 
+# decomposed obs is captured before team markers are stamped in, so the fire
+# window only ever contains GREEN/RED/BLACK/WHITE, never BLUE
+FIRE_NUM_CLASSES = DroneFireSim.WHITE + 1
+
+def _one_hot_fire_grid(grid: np.ndarray) -> np.ndarray:
+    '''one-hots a fire grid into (num_classes, H, W), channels first'''
+    return np.eye(FIRE_NUM_CLASSES, dtype=np.float32)[grid.astype(np.int64)].transpose(2, 0, 1)
+
 def fire_obs_packaging(
         obs_history, 
         obs_map, 
@@ -29,7 +37,7 @@ def fire_obs_packaging(
                 idx *= -1
 
             self_pos_ts = obs_history[idx][agent]['self_pos'] - pos
-            target_obs_ts = obs_history[idx][agent]['fire'].flatten() # #prev pos rel to current pos
+            target_obs_ts = _one_hot_fire_grid(obs_history[idx][agent]['fire']).flatten() # #prev pos rel to current pos
 
             if i == min_obs - 1:
                 obs_ts = target_obs_ts

@@ -45,14 +45,16 @@ class fire_NN(nn.Module):
 	two-headed belief model for the fire env.
 
 	input is the flattened array produced by fire_obs_packaging:
-	[ fire_maps (num_frames * window_size * window_size),
+	[ fire_maps (num_frames * num_classes * window_size * window_size),
 	  pos_change ((min_obs-1) * 2),
 	  last_team_obs ((n_agents-1) * 2) ]
 
-	the fire_maps prefix is reshaped back into a (num_frames, window_size,
-	window_size) image stack and fed to a cnn head; everything after it
-	(pos over time + last team estimate) is fed to a linear head. the two
-	heads are fused before the output layer.
+	each fire map is one-hot encoded over num_classes fire states (channels
+	first) rather than a single scalar cell value. the fire_maps prefix is
+	reshaped back into a (num_frames * num_classes, window_size, window_size)
+	image stack and fed to a cnn head; everything after it (pos over time +
+	last team estimate) is fed to a linear head. the two heads are fused
+	before the output layer.
 	'''
 
 	def __init__(self,
@@ -60,6 +62,7 @@ class fire_NN(nn.Module):
                 output_channels:int,
 				window_size:int = 61,
 				num_frames:int = 10,
+				num_classes:int = 4,
 				p_mc_dropout = 0.5) :
 
 		super().__init__()
@@ -71,12 +74,13 @@ class fire_NN(nn.Module):
 
 		self.window_size = window_size
 		self.num_frames = num_frames
-		self.fire_input_size = num_frames * window_size * window_size
+		self.num_classes = num_classes
+		self.fire_input_size = num_frames * num_classes * window_size * window_size
 		self.linear_input_size = input_channels - self.fire_input_size
 
 		# ---------- cnn head: reconstructed fire maps over time ----------
 		self.cnn_head = nn.Sequential(
-			nn.Conv2d(num_frames, 32, kernel_size=5, stride=2, padding=2),
+			nn.Conv2d(num_frames * num_classes, 32, kernel_size=5, stride=2, padding=2),
 			nn.ReLU(inplace=True),
 			nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),
 			nn.ReLU(inplace=True),
@@ -87,7 +91,7 @@ class fire_NN(nn.Module):
 			# equivalent and keeps training deterministic
 			nn.AvgPool2d(kernel_size=2, stride=2),
 		)
-		self.cnn_proj = nn.Linear(128 * 4 * 4, 256)
+		self.cnn_proj = nn.Linear(128 * 4 * 4, 64)
 
 		# ---------- linear head: pos over time + last team estimate ----------
 		self.linear_head = nn.Sequential(
@@ -99,7 +103,7 @@ class fire_NN(nn.Module):
 
 		# ---------- fusion ----------
 		self.fusion = nn.Sequential(
-			nn.Linear(256 + 256, 256),
+			nn.Linear(64 + 256, 256),
 			nn.ReLU(inplace=True),
 			nn.Linear(256, 128),
 			nn.ReLU(inplace=True),
@@ -114,7 +118,7 @@ class fire_NN(nn.Module):
 			x = x.unsqueeze(0)
 
 		fire_x = x[:, :self.fire_input_size].contiguous().view(
-			-1, self.num_frames, self.window_size, self.window_size
+			-1, self.num_frames * self.num_classes, self.window_size, self.window_size
 		)
 		linear_x = x[:, self.fire_input_size:]
 

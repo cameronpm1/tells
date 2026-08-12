@@ -7,7 +7,8 @@ from matplotlib.colors import LinearSegmentedColormap, to_rgb
 from matplotlib.lines import Line2D
 
 
-RESULTS_DIR = '/home/cameron/tells/logs/marl/predator_prey_fully_obs/checkpoint1000/results'
+#RESULTS_DIR = '/home/cameron/tells/logs/marl/predator_prey_fully_obs/checkpoint1000/results'
+RESULTS_DIR = '/home/cameron/tells/logs/marl/predator_prey_fully_obs/controller_results'
 PLOT_SAVE_PATH = '/home/cameron/tells/test.png'
 WORLD_STATE_SAVE_PATH = '/home/cameron/tells/test_world_state.png'
 

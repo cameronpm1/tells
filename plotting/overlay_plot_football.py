@@ -9,8 +9,8 @@ from matplotlib.patches import Circle, Rectangle
 
 
 RESULTS_DIR = '/home/cameron/tells/logs/marl/football_fully_obs_slow/checkpoint5000/results'
-#
 RESULTS_DIR = '/home/cameron/tells/logs/marl/football_fully_obs_slow/checkpoint0_pretrain/results_pf'
+RESULTS_DIR = '/home/cameron/tells/logs/marl/football_fully_obs/controller_results'
 PLOT_SAVE_PATH = '/home/cameron/tells/test_football.png'
 WORLD_STATE_SAVE_PATH = '/home/cameron/tells/test_football_world_state.png'
 
@@ -294,6 +294,20 @@ def _draw_ground_truth(
     return legend_handles
 
 
+def _set_centered_bounds(ax, positions_list, margin: float = 0.1):
+    '''
+    zoom ax in as tightly as possible while (a) keeping the field's center
+    (0, 0) in the middle of the image, so the halfway line/center circle
+    stay centered, and (b) still fitting every point in positions_list -
+    i.e. the smallest centered square that contains all the data
+    '''
+    all_positions = np.concatenate(positions_list)
+    half_extent = np.max(np.abs(all_positions)) * (1 + margin)
+    ax.set_xlim(-half_extent, half_extent)
+    ax.set_ylim(-half_extent, half_extent)
+    ax.set_aspect('equal')
+
+
 def _set_zoom_bounds(ax, positions_list, anchor_position):
     '''
     zoom ax in on anchor_position, sized to fit every point in
@@ -387,7 +401,7 @@ def plot_episode_trajectory_overlay(
 
     legend_handles = _draw_ground_truth(ax, agent_positions, target_positions, ball_positions, fade)
 
-    _set_zoom_bounds(ax, [*agent_positions.values(), target_positions, ball_positions], ball_positions[-1])
+    _set_centered_bounds(ax, [*agent_positions.values(), target_positions, ball_positions])
     ax.set_title(f'Episode Ground Truth (steps {start_idx}-{start_idx + n_steps - 1})', fontweight='bold')
     ax.legend(handles=legend_handles, loc='upper right', framealpha=0.9, prop={'weight': 'bold', 'size': 12})
 

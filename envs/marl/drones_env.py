@@ -472,6 +472,11 @@ class CaravanAviary(BaseRLAviary):
         protector_pos = self._get_team_state()[: self.n_agents, 0:3]
         protector_proj = protector_pos @ axis_unit
         protector_pair_dists = np.abs(protector_proj[:, None] - protector_proj[None, :])[np.triu_indices(self.n_agents, k=1)]
+
+        min_spacing_dist = self.reward_cfg.get('min_spacing_dist', 0.0)
+        if np.any(protector_pair_dists < min_spacing_dist):
+            return 0.0
+
         protector_pair_dists = np.delete(protector_pair_dists, np.argmax(protector_pair_dists))
         mean_gap = np.mean(protector_pair_dists)
         return float(np.exp(-np.std(protector_pair_dists) / mean_gap)) if mean_gap > 1e-6 else 0.0
@@ -495,7 +500,7 @@ class CaravanAviary(BaseRLAviary):
 
         target_pos = self._getDroneStateVector(self.target_idx)[0:3]
         dist_to_closest_box = float(np.min(np.linalg.norm(self.box_state[:, 0:2] - target_pos[0:2], axis=1)))
-        reward += min(dist_to_closest_box, 6.0) * self.reward_cfg.get('target_dist_scale', 1.0)
+        reward += min(dist_to_closest_box, 4.0) * self.reward_cfg.get('target_dist_scale', 1.0)
 
         if self._breached_box():
             reward -= self.reward_cfg.get('intruded_penalty', 300)
@@ -710,7 +715,7 @@ class CaravanAviary(BaseRLAviary):
         """
 
         if camera_position is None:
-            camera_position = np.array([4.5, 4.5, 2.9], dtype=np.float32)
+            camera_position = np.array([2, 2, 1.33], dtype=np.float32) #np.array([4.5, 4.5, 2.9], dtype=np.float32)
 
         if target_position is None:
             target_position = np.array([0.0, 0.0, 0.5], dtype=np.float32)
@@ -955,3 +960,59 @@ class CaravanAviary(BaseRLAviary):
             draw_drone(px, py, radius, color)
 
         return img
+
+    def decompose_reward(
+        self,
+        joint_reward,
+        obs,
+    ):
+        dist_norm = 2
+
+        target_obs = obs['target']
+        adversary_pos = target_obs[self.obs_map['self_pos']]
+        team_pos = (
+            target_obs[self.obs_map['target_obs']]
+            + np.tile(adversary_pos, self.n_agents)
+        ).reshape(-1, 3)
+        box_pos = (
+            target_obs[self.obs_map['target']][:-3]
+            + np.tile(adversary_pos, int(len(target_obs[self.obs_map['target']]) / 3 - 1))
+        ).reshape(-1, 3)
+
+        repulsion_radius = self.controller_cfg['adversary_repulsion_radius']
+        repulsion_gain = self.controller_cfg['adversary_repulsion_gain']
+        attraction_gain = self.controller_cfg['adversary_attraction_gain']
+
+        target_pos = box_pos[self.current_target_box_idx]
+        attraction = float(attraction_gain) * (target_pos - adversary_pos)
+        attraction_norm = np.linalg.norm(attraction)
+
+        forces = {}
+        for agent, protector in zip(self.agents, team_pos):
+            diff = adversary_pos - protector
+            diff[2] = 0.0
+
+            dist = np.linalg.norm(diff) + 1e-6
+
+            if dist <= repulsion_radius:
+                forces[agent] = float(repulsion_gain) * diff / (dist ** 2)
+            else:
+                forces[agent] = np.zeros(3, dtype=np.float32)
+
+        force_norms = {agent: np.linalg.norm(force) for agent, force in forces.items()}
+        total_force_norm = sum(force_norms.values()) + attraction_norm + 1e-6
+
+        decomposed_reward = {}
+        for agent in self.agents:
+            self_pos = obs[agent][self.obs_map['self_pos']]
+            neighbor_dists = [
+                np.linalg.norm(self_pos - obs[other][self.obs_map['self_pos']])
+                for other in self.agents if other != agent
+            ]
+            nearest_dist = min(neighbor_dists) if neighbor_dists else 0.0
+            nn_factor = np.clip(nearest_dist, 0.0, dist_norm) / dist_norm
+
+            force_share = force_norms[agent] / total_force_norm
+            decomposed_reward[agent] = force_share * nn_factor * joint_reward
+
+        return decomposed_reward

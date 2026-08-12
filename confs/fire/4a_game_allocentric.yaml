@@ -1,4 +1,4 @@
-seed: &seed 22 # set experiment seed
+seed: &seed 21 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
 min_obs: 4
@@ -42,10 +42,10 @@ env:
   agent_list: ['agent0', 'agent1', 'agent2', 'agent3', 'target']
   learned_agent_list: ['agent0', 'agent1', 'agent2', 'agent3']
   noise:
-    team: 12.0
+    team: 0.0
     target: 0.0
   env_kwargs:
-    warm_up_steps: 30 #25
+    warm_up_steps: 25
   reward_kwargs:
     extinguish_scale: 0.01
     green_scale: -1
@@ -54,6 +54,7 @@ env:
     extinguish_reward: 500
     bc_scale: 0.5
     proximity_penalty: 5.0
+    belief_dev_scale: 1.0
   controller_kwargs:
     deadzone: 0.1
 

@@ -1,10 +1,9 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
-min_obs: 5
-logdir: /home/cameron/tells/logs/marl/drones_newrew2
+min_obs: 10
+logdir: /home/cameron/tells/logs/marl/drones_fully_obs_4
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
-
 
 
 alg:
@@ -19,13 +18,13 @@ alg:
   num_gpus: 0
   pi : [256, 256, 256]
   vf : [256, 256, 256]
-  timesteps: 5000
+  timesteps: 1500
   checkpoint_freq: 250
   minibatch_size: 512
   num_epochs: 3
   lambda: 0.95
   entropy_coeff: 0.0
-  clip_param: 0.05
+  clip_param: 0.2
   vf_clip_param: 10.0
   grad_clip: 0.25
   pretrain:
@@ -40,12 +39,12 @@ alg:
 
 env:
   scenario: 3_agent_drones
-  max_episode_length: 200 #in seconds
+  max_episode_length: 125 #in seconds
   agent_list: ['agent0', 'agent1', 'agent2', 'target']
   learned_agent_list: ['agent0', 'agent1', 'agent2']
   noise:
     team: 0.3
-    target: 0.2
+    target: 0.0
   env_kwargs:
     grid_size: 20
     num_goal_boxes: 5
@@ -60,26 +59,29 @@ env:
     target_spawn_distance: 5.0
   controller_kwargs:
     adversary_repulsion_radius: 2.0
-    adversary_repulsion_gain: 2.0
+    adversary_repulsion_gain: 3.0
     adversary_attraction_gain: 1.0
-    adversary_replan_steps: 5
+    adversary_replan_steps: 1
     protection_radius: *protection_radius
     target_response: 1.0
     follow_threshold: 0.35
     max_gap_factor: 1.05
-    goal_spacing: 2.0
+    slot_spacing: 2.0
+    target_spacing: 1.5
+    drone_leash: 6.0
     deadzone: 0.2
     altitude_deadzone: 0.15
     min_altitude: 0.25
     max_altitude: 1.5
   reward_kwargs:
-    protected_scale: 0
-    intruded_penalty: 1000
-    oob_penalty: 1000
+    protected_scale: 1
+    intruded_penalty: 300
+    oob_penalty: 300
     step_reward: 1
     bc_scale: 0.5
-    spacing_scale: 5
+    spacing_scale: 1.0
     min_spacing_dist: 1.0
+    target_dist_scale: 0.5
 
 sim:
   n: 3 #number of pursuit agents

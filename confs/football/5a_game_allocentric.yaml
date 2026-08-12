@@ -1,7 +1,8 @@
 seed: &seed 22 # set experiment seed
 timestep: &timestep 1.0  #20
 horizon: &horizon 10 #10
-logdir: /home/cameron/tells/logs/marl/football1
+min_obs: 10
+logdir: /home/cameron/tells/logs/marl/football_fully_obs
 notes: multi agent trainging, diff initialization, no curriculum, smallest initiallization 2
 
 alg:
@@ -16,7 +17,7 @@ alg:
   num_gpus: 0
   pi : [512, 512, 512]
   vf : [512, 512, 512]
-  timesteps: 5000
+  timesteps: 3000
   checkpoint_freq: 250
   minibatch_size: 512
   num_epochs: 3
@@ -40,27 +41,20 @@ env:
   max_episode_length: 300 #MUST ALSO EDIT IN BUILDER AT BOTTOM OF ENV FILE
   agent_list: ['agent0', 'agent1', 'agent2', 'agent3', 'agent4', 'target']
   learned_agent_list: ['agent0', 'agent1', 'agent2', 'agent3', 'agent4']
-  reward_kwargs:
-    pass_reward: 1.0
-    target_steal_penalty: -10.0
-    deviation_threshold: 0.1
-    deviation_scale: 0.5
-    controller_match_reward: 0.5
-    oob_penalty: -750
-    belief_dev_scale: 0.5
-  controller_kwargs:
-    dead_zone: 0.01
-    fast: false
+  belief: false
   noise:
     team: 0.0
     target: 0.0
-  belief_kwargs:
-    max_speed: 0.03
-    speed_ratio: 1.1
-    ball_speed: 0.35
-    std_dev: 0.02
-    measurement_std: 0.02
-
+  reward_kwargs:
+    pass_reward: 0.0
+    target_steal_penalty: -750.0
+    deviation_threshold: 0.1
+    deviation_scale: 1.0 #0.5
+    controller_match_reward: 0.5
+    oob_penalty: -750
+  controller_kwargs:
+    dead_zone: 0.01
+    fast: true
 
 sim:
   n: 3 #number of pursuit agents

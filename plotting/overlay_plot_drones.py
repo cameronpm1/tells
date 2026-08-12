@@ -11,6 +11,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 RESULTS_DIR = '/home/cameron/tells/logs/marl/drones_fully_obs/checkpoint1000/results'
 #RESULTS_DIR = '/home/cameron/tells/logs/marl/drones_fully_obs/checkpoint1000/results_pf'
+RESULTS_DIR = '/home/cameron/tells/logs/marl/drones_fully_obs/controller_results'
 PLOT_SAVE_PATH = '/home/cameron/tells/test_drones.png'
 WORLD_STATE_SAVE_PATH = '/home/cameron/tells/test_drones_world_state.png'
 

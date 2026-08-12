@@ -2,7 +2,7 @@ seed: &seed 23 # set experiment seed
 timestep: &timestep 0.5  #20
 horizon: &horizon 10 #10
 min_obs: 10
-logdir: logs/marl/predator_prey_fully_obs_long_no_grad
+logdir: logs/marl/predator_prey_fully_obs
 notes: Predators start co-located at one randomized pack position; prey dynamics unchanged
 
 alg:
@@ -68,7 +68,7 @@ env:
     prey_avoid_gain: 1.5
   reward_kwargs:
     controller_action_scale: 5.0
-    oob_penalty: 3000.0
+    oob_penalty: 100.0
     surround_radius: 2.4
     ideal_radius: 2.0
     radius_tolerance: 0.7

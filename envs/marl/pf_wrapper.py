@@ -169,8 +169,14 @@ class PFWrapper(MultiAgentEnv):
                             self.min_confidence_agent[agent] = (key, pf_obs[key]['confidence'])
                 
 
-            if self.eval and self.obs_map is not None:
-                sampled_predictions[agent] = deepcopy(new_obs[agent][self.obs_map['team']])
+            if self.eval:
+                if 'fire' in self.name:
+                    self_pos = infos['__common__']['decomposed_obs'][agent]['self_pos']
+                    sampled_predictions[agent] = np.concatenate([
+                        pf_obs[key]['pos'] - self_pos for key in pf_obs.keys() if 'agent' in key
+                    ])
+                else:
+                    sampled_predictions[agent] = deepcopy(new_obs[agent][self.obs_map['team']])
 
             all_same = all(pf_obs[agent2]['confidence'] == self.min_confidence_agent[agent][1] for agent2 in pf_obs.keys())
             if all_same or self.consecutive_agent_count[agent] > self.force_change_count:
