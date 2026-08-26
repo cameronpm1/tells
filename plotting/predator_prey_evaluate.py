@@ -15,7 +15,7 @@ from envs.marl.predator_prey_env import PredatorPreyEnv
 from overlay_plot_predator_prey import load_episode_positions, load_episode_beliefs
 
 
-RESULTS_DIR = '/home/cameron/tells/logs/marl/predator_prey_fully_obs/checkpoint1000/results'
+RESULTS_DIR = '/home/cameron/tells/logs/marl/predator_prey_fully_obs/checkpoint1000/results_allocentric'
 RESULTS_PF_DIR = '/home/cameron/tells/logs/marl/predator_prey_fully_obs/checkpoint1000/results_pf'
 BELIEF_ERROR_SAVE_PATH = '/home/cameron/tells/test_belief_error.png'
 DECOMPOSED_REWARD_SAVE_PATH = '/home/cameron/tells/test_decomposed_reward.png'
@@ -288,6 +288,7 @@ def _draw_average_with_std(
     reference_line: float = None,
     reference_label: str = None,
     min_samples: int = 2,
+    show_legend: bool = True,
 ):
     '''
     draw the per-step mean (+/- 1 stdev, pooled across episodes) for one or
@@ -312,6 +313,10 @@ def _draw_average_with_std(
         plotting - late steps that only a handful of (long-running)
         episodes reach are otherwise single noisy datapoints with a
         meaningless (zero-width) stdev band
+    show_legend:bool
+        whether to draw the per-panel legend - combined figures with
+        several stacked panels turn this off to avoid repeating the same
+        legend on every subplot
     '''
     for label, values_by_step in series.items():
         steps = sorted(s for s in values_by_step if len(values_by_step[s]) >= min_samples)
@@ -321,7 +326,7 @@ def _draw_average_with_std(
         means = np.array([values_by_step[s].mean() for s in steps])
         stds = np.array([values_by_step[s].std() for s in steps])
 
-        line = sns.lineplot(x=steps, y=means, ax=ax, label=f'{label} mean')
+        line = sns.lineplot(x=steps, y=means, ax=ax, label=f'{label} mean', legend=False)
         color = line.get_lines()[-1].get_color()
         ax.fill_between(steps, means - stds, means + stds, alpha=0.2, color=color, label=f'{label} +/- 1 stdev')
 
@@ -329,7 +334,26 @@ def _draw_average_with_std(
         ax.axhline(reference_line, color='black', linestyle=':', label=reference_label)
 
     ax.set_ylabel(ylabel)
-    ax.legend()
+    if show_legend:
+        ax.legend()
+
+
+def _set_endpoint_yticks(ax, y_min: float = None):
+    '''
+    keep only the lowest and highest y-tick so stacked combined-metric
+    panels stay visually light
+
+    inputs
+    ------
+    y_min:float
+        if given, floor the low tick at this value (e.g. 0 for a metric
+        that can never go negative) instead of using the auto-computed
+        tick, which can dip below the true data range due to matplotlib's
+        default axis padding
+    '''
+    yticks = ax.get_yticks()
+    low = yticks[0] if y_min is None else max(y_min, yticks[0])
+    ax.set_yticks([low, yticks[-1]])
 
 
 def plot_average_with_std(
@@ -409,17 +433,19 @@ def plot_combined_metrics(
         CONTROLLER_MEAN_DECOMPOSED_REWARD)
     '''
     sns.set_theme(style='darkgrid')
-    fig, axes = plt.subplots(3, 1, figsize=(10, 11), sharex=True)
+    fig, axes = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
 
-    _draw_average_with_std(axes[0], belief_error, ylabel='belief error')
+    _draw_average_with_std(axes[0], belief_error, ylabel='Belief Error', show_legend=False)
+    _draw_average_with_std(axes[1], estimate_variance, ylabel='Belief Variance', show_legend=False)
     _draw_average_with_std(
-        axes[1], decomposed_reward, ylabel='decomposed reward',
-        reference_line=reference_line, reference_label=reference_label, min_samples=2,
+        axes[2], decomposed_reward, ylabel='Decomposed Reward',
+        reference_line=reference_line, reference_label=reference_label, min_samples=2, show_legend=False,
     )
-    _draw_average_with_std(axes[2], estimate_variance, ylabel='cross-observer estimate variance')
 
-    axes[0].set_title('Average Belief Error, Decomposed Reward, and Estimate Variance over Episode Steps',
-                       fontweight='bold')
+    _set_endpoint_yticks(axes[0], y_min=0)
+    _set_endpoint_yticks(axes[1], y_min=0)
+    _set_endpoint_yticks(axes[2])
+
     axes[-1].set_xlabel('step')
 
     fig.tight_layout()

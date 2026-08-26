@@ -270,6 +270,7 @@ def make_fire_env(
         drone_names=config['env']['learned_agent_list'],
         fire_controller=probabilistic_fire_controller,
         controller_kwargs=config['env'].get('controller_kwargs'),
+        fire_controller_kwargs=config['env'].get('fire_controller_kwargs'),
         reward_kwargs = config['env'].get('reward_kwargs'),
         max_episode_length=config['env']['max_episode_length'],
         **config['env']['env_kwargs'],
@@ -290,12 +291,16 @@ def make_fire_env(
             name='fire',
             particle_filter = FireParticleFilter,
             agent_control_function = lambda obs: extinguish_controller(obs, **config['env']['controller_kwargs']),
-            target_control_function = lambda fire: probabilistic_fire_controller(fire),
+            target_control_function = lambda fire, drone_positions=None: probabilistic_fire_controller(
+                fire, drone_positions=drone_positions, **config['env'].get('fire_controller_kwargs', {})
+            ),
             dim=2,
             eval=eval,
             belief_kwargs=config['env']['belief_kwargs'],
         )
+    elif wrap is None:
+        pass
     else:
-        print('Wrapper not supported for football env...')
+        print('Wrapper not supported for fire env...')
 
     return env

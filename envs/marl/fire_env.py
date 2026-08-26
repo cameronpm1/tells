@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 matplotlib.use("Agg")  
 
-from controllers.fire_control import probabilistic_fire_controller, extinguish_controller
+from controllers.fire_control import probabilistic_fire_controller, extinguish_controller, nearest_cell_dist, inward_band_cost
 
 GRID_SIZE = 60
 
@@ -22,16 +22,19 @@ class DroneFireEnv(gymnasium.Env):
         fire_controller,
         drone_start_area: list[int] = [0, 0],
         controller_kwargs: Optional[dict] = None,
+        fire_controller_kwargs: Optional[dict] = None,
         reward_kwargs: Optional[dict] = None,
         observation_range: int = 30,
         local_observations: bool = False,
         warm_up_steps: int = 10,
+        noise: bool = True,
         local_radius: int = 5,
         max_episode_length: int = 300,
         drone_start_noise: int = 3,
         ignition_points=None,
         n_random_fires: int = 1,
         extinguish_radius: int = 5,
+        move_speed: int = 1,
     ):
         super().__init__()
 
@@ -40,6 +43,7 @@ class DroneFireEnv(gymnasium.Env):
         self.full_agent_list = self.agents + ['target']
 
         self.warm_up_steps = warm_up_steps
+        self.noise = noise
         self.observation_range = observation_range
         self.local_observations = local_observations
         self.local_radius = int(local_radius)
@@ -55,10 +59,12 @@ class DroneFireEnv(gymnasium.Env):
             drone_names=drone_names,
             drone_start_area=drone_start_area,
             fire_controller=fire_controller,
+            fire_controller_kwargs=fire_controller_kwargs,
             drone_start_noise=drone_start_noise,
             ignition_points=ignition_points,
             n_random_fires=n_random_fires,
             extinguish_radius=extinguish_radius,
+            move_speed=move_speed,
         )
 
         self._step = 0
@@ -111,14 +117,17 @@ class DroneFireEnv(gymnasium.Env):
         )
         self.obs = self._compute_obs(obs)
 
-        warm_up_noise = 0 + np.random.randint(-5, 6)
+        warm_up_noise = 0 #+ np.random.randint(0, 1) #-5-6
         for _ in range(self.warm_up_steps + warm_up_noise):
             actions = {agent: 0 for agent in self.agents}
             obs, rew, done, info = self.env.step(actions)
 
         self.info = {'__common__':{}}
         self.info['__common__']['decomposed_obs'] = {agent: deepcopy(self.obs[agent]) for agent in self.agents}
+        pre_combine_obs = self.obs
         self.obs = self._combine_obs(self.obs)
+        for agent in self.agents:
+            self.info['__common__']['decomposed_obs'][agent]['noise'] = pre_combine_obs[agent]['noise']
 
         return deepcopy(self.obs), deepcopy(self.info)
 
@@ -152,7 +161,10 @@ class DroneFireEnv(gymnasium.Env):
         truncations = {agent : truncations for agent in self.full_agent_list}
         terminations = {agent : terminations for agent in self.full_agent_list}
         self.info['__common__']['decomposed_obs'] = {agent: deepcopy(self.obs[agent]) for agent in self.agents}
+        pre_combine_obs = self.obs
         self.obs = self._combine_obs(self.obs)
+        for agent in self.agents:
+            self.info['__common__']['decomposed_obs'][agent]['noise'] = pre_combine_obs[agent]['noise']
 
         return deepcopy(self.obs), reward, terminations, truncations, deepcopy(self.info)
 
@@ -188,9 +200,18 @@ class DroneFireEnv(gymnasium.Env):
         for agent in self.agents:
             partial_obs = obs[agent]['fire']
 
+            obs[agent]['noise'] = []
+
             for team_pos in obs[agent]['team']:
-                rel_r = team_pos[0]
-                rel_c = team_pos[1]
+                if self.noise:
+                    noise_r = np.random.randint(-7, 7)
+                    noise_c = np.random.randint(-7, 7)
+                else:
+                    noise_r = 0
+                    noise_c = 0
+                obs[agent]['noise'].append((noise_r, noise_c))
+                rel_r = team_pos[0] + noise_r
+                rel_c = team_pos[1] + noise_c
 
                 if abs(rel_r) <= self.observation_range and abs(rel_c) <= self.observation_range:
                     cross_r = rel_r + self.observation_range
@@ -270,7 +291,7 @@ class DroneFireEnv(gymnasium.Env):
 
         return bool(np.any(green_mask & adjacent_to_red))
 
-    def _proximity_penalty_count(self, min_dist: float = 3.0) -> int:
+    def _proximity_penalty_count(self, min_dist: float = 1.0) -> int:
         positions = [self.env.drone_states[agent] for agent in self.agents]
         count = 0
 
@@ -376,6 +397,48 @@ class DroneFireEnv(gymnasium.Env):
 
         return frame
 
+    def decompose_reward(
+        self,
+        joint_reward,
+        obs,
+    ):
+        '''
+        obs:dict
+            agent -> {'self_pos': ...} (as in info['__common__']['decomposed_obs'])
+            plus a 'target' key holding the full (GRID_SIZE, GRID_SIZE) fire
+            grid (as in info['target']) - the same shape _compute_drone_slots
+            accepts for its centralized-obs branch
+        '''
+        min_slot_dist = 2 #self.controller_kwargs.get('min_slot_dist', 6)
+
+        positions = np.array([obs[agent]['self_pos'] for agent in self.agents], dtype=float)
+        grid = np.asarray(obs['target'])
+        green_cells = np.argwhere(grid == DroneFireSim.GREEN).astype(float)
+        black_cells = np.argwhere(grid == DroneFireSim.BLACK).astype(float)
+
+        d_green = nearest_cell_dist(positions, green_cells)
+        pixel_score = inward_band_cost(d_green)
+
+        if len(black_cells) > 0:
+            d_black = nearest_cell_dist(positions, black_cells)
+            pixel_score += inward_band_cost(d_black)
+
+        total_score = pixel_score.sum() + 1e-6
+
+        decomposed_reward = {}
+        for i, agent in enumerate(self.agents):
+            neighbor_dists = [
+                np.linalg.norm(positions[i] - positions[j])
+                for j in range(len(self.agents)) if j != i
+            ]
+            nearest_dist = min(neighbor_dists) if neighbor_dists else 0.0
+            nn_factor = np.clip(nearest_dist, 0.0, min_slot_dist) / min_slot_dist
+
+            score_share = pixel_score[i] / total_score
+            decomposed_reward[agent] = score_share * nn_factor * joint_reward
+
+        return decomposed_reward
+
 class DroneFireSim:
     GREEN, RED, BLACK, WHITE, BLUE = 0, 1, 2, 3, 4
 
@@ -405,17 +468,25 @@ class DroneFireSim:
         drone_names: list[str],
         drone_start_area: list[float],
         fire_controller,
+        fire_controller_kwargs: Optional[dict] = None,
         drone_start_noise: int = 3,
         ignition_points=None,
         n_random_fires: int = 1,
         extinguish_radius: int = 5,
+        move_speed: int = 1,
     ):
         self.drone_names = drone_names
         self.n_drones = len(drone_names)
         self.drone_start_area = np.array(drone_start_area, dtype=np.int32)
         self.drone_start_noise = drone_start_noise
         self.fire_controller = fire_controller
+        self.fire_controller_kwargs = fire_controller_kwargs if fire_controller_kwargs is not None else {}
         self.extinguish_radius = extinguish_radius
+        self.move_speed = move_speed
+        self.ACTION_LIBRARY = {
+            k: (v * move_speed if k != 9 else v)
+            for k, v in DroneFireSim.ACTION_LIBRARY.items()
+        }
 
         self.ignition_points = ignition_points
         self.n_random_fires = n_random_fires
@@ -549,7 +620,12 @@ class DroneFireSim:
 
     def step(self, actions):
         extinguish_count = self.move_drones(actions)
-        self.fire_state = self.fire_controller(self.fire_state).astype(np.int8)
+        drone_positions = np.array(list(self.drone_states.values()), dtype=float)
+        self.fire_state = self.fire_controller(
+            self.fire_state,
+            drone_positions=drone_positions,
+            **self.fire_controller_kwargs,
+        ).astype(np.int8)
         self.t += 1
 
         if np.all(self.fire_state != self.GREEN) or np.all(self.fire_state != self.RED):

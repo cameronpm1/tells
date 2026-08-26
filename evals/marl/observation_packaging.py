@@ -6,18 +6,24 @@ from controllers.football_control import get_ball_owner
 from envs.marl.fire_env import DroneFireSim
 
 # decomposed obs is captured before team markers are stamped in, so the fire
-# window only ever contains GREEN/RED/BLACK/WHITE, never BLUE
-FIRE_NUM_CLASSES = DroneFireSim.WHITE + 1
+# window only ever contains GREEN/RED/BLACK/WHITE, never BLUE. only RED and
+# BLACK are informative (active fire front / burnt-out cell), so GREEN and
+# WHITE collapse to an all-zero encoding instead of getting their own channel.
+FIRE_NUM_CLASSES = 2
+
+_FIRE_CLASS_LOOKUP = np.zeros((DroneFireSim.WHITE + 1, FIRE_NUM_CLASSES), dtype=np.float32)
+_FIRE_CLASS_LOOKUP[DroneFireSim.RED, 0] = 1.0
+_FIRE_CLASS_LOOKUP[DroneFireSim.BLACK, 1] = 1.0
 
 def _one_hot_fire_grid(grid: np.ndarray) -> np.ndarray:
-    '''one-hots a fire grid into (num_classes, H, W), channels first'''
-    return np.eye(FIRE_NUM_CLASSES, dtype=np.float32)[grid.astype(np.int64)].transpose(2, 0, 1)
+    '''encodes a fire grid into (num_classes, H, W), channels first; only RED/BLACK cells get a 1, GREEN/WHITE are all-zero'''
+    return _FIRE_CLASS_LOOKUP[grid.astype(np.int64)].transpose(2, 0, 1)
 
 def fire_obs_packaging(
-        obs_history, 
-        obs_map, 
+        obs_history,
+        obs_map,
         agent_list,
-        min_obs=10, 
+        min_obs=10,
         noise: Optional[dict] = None
     ):
 
@@ -59,24 +65,26 @@ def fire_obs_packaging(
         else:
             last_team_obs = deepcopy(team_obs)
 
-        if noise is not None:
-            team_noise = np.random.normal(0, noise['team'], size=last_team_obs.shape)
+        if noise is not None and agent in noise:
+            team_noise = np.array(noise[agent]).flatten()
+            team_noise_old = np.array(noise[str(agent)+'_old']).flatten()
         else:
             team_noise = np.zeros_like(last_team_obs)
+            team_noise_old = np.zeros_like(last_team_obs)
 
         data_point = {}
-        data_point['input'] = np.concatenate((allocentric_obs,last_team_obs + team_noise)) # add noise to input for this env
-        data_point['label'] = np.concatenate((last_team_obs,team_obs)) # no noise for this env
+        data_point['input'] = np.concatenate((allocentric_obs,last_team_obs + team_noise_old))
+        data_point['label'] = np.concatenate((last_team_obs,team_obs)) # no noise for this data
 
         obs_dict[agent] = data_point
 
     return obs_dict, _transform_fire_pred
 
 def football_obs_packaging(
-        obs_history, 
-        obs_map, 
+        obs_history,
+        obs_map,
         agent_list,
-        min_obs=10, 
+        min_obs=10,
         noise: Optional[dict] = None
     ):
 
@@ -130,10 +138,10 @@ def football_obs_packaging(
     return obs_dict, _transform_football_pred
 
 def drones_obs_packaging(
-        obs_history, 
-        obs_map, 
+        obs_history,
+        obs_map,
         agent_list,
-        min_obs=5, 
+        min_obs=5,
         noise: Optional[dict] = None
     ):
 
@@ -186,10 +194,10 @@ def drones_obs_packaging(
     return obs_dict, _transform_drone_pred
 
 def predator_prey_obs_packaging(
-        obs_history, 
-        obs_map, 
+        obs_history,
+        obs_map,
         agent_list,
-        min_obs=10, 
+        min_obs=10,
         noise: Optional[dict] = None
     ):
 
@@ -274,7 +282,7 @@ def _transform_football_pred(obs, obs_map, agent, prediction):
 
 def _transform_fire_pred(obs, obs_map, agent, prediction):
 
-    fire_map = np.array(obs[agent]['fire'], dtype=np.float32, copy=True)
+    fire_map = deepcopy(obs[agent]['fire'])
     window_size = fire_map.shape[0]
     observation_range = (window_size - 1) // 2
 

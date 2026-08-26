@@ -84,7 +84,7 @@ class PFWrapper(MultiAgentEnv):
 
         
         self.switch_time = 1 #number of timesteps it takes to observe new agent
-        self.force_change_count = 2
+        self.force_change_count = 5
         self.min_confidence_agent = {}
         self.temp_noise = {}
 
@@ -155,11 +155,26 @@ class PFWrapper(MultiAgentEnv):
                             self.min_confidence_agent[agent] = (key, pf_obs[key]['confidence'])
                         if pf_obs[key]['confidence'] < self.min_confidence_agent[agent][1]:
                             self.min_confidence_agent[agent] = (key, pf_obs[key]['confidence'])
+
+                if self.eval:
+                    sampled_predictions[agent] = deepcopy(new_obs[agent][self.obs_map['team']])
             else:
                 self.particle_filters[agent].propagate_all(infos['__common__']['decomposed_obs'][agent])
 
                 pf_obs = self.particle_filters[agent].get_observation(infos['__common__']['decomposed_obs'][agent]['self_pos'])
                 new_obs[agent] = pf_obs.pop(agent)
+
+                if self.eval:
+                    self_pos = infos['__common__']['decomposed_obs'][agent]['self_pos']
+                    sampled_predictions[agent] = np.concatenate([
+                        pf_obs[key]['pos'] - self_pos for key in pf_obs.keys() if 'agent' in key
+                    ])
+
+                for pf_agent in self.agents:
+                    if pf_agent != agent and 'target' not in pf_agent:
+                        rel_pos = infos['__common__']['decomposed_obs'][pf_agent]['self_pos'] - self_pos
+                        if max(abs(rel_pos)) > self.env.observation_range:
+                            pf_obs.pop(pf_agent, None)
 
                 for i,key in enumerate(pf_obs.keys()):
                     if self.switch_count[agent] == 0:
@@ -167,16 +182,7 @@ class PFWrapper(MultiAgentEnv):
                             self.min_confidence_agent[agent] = (key, pf_obs[key]['confidence'])
                         if pf_obs[key]['confidence'] < self.min_confidence_agent[agent][1]:
                             self.min_confidence_agent[agent] = (key, pf_obs[key]['confidence'])
-                
-
-            if self.eval:
-                if 'fire' in self.name:
-                    self_pos = infos['__common__']['decomposed_obs'][agent]['self_pos']
-                    sampled_predictions[agent] = np.concatenate([
-                        pf_obs[key]['pos'] - self_pos for key in pf_obs.keys() if 'agent' in key
-                    ])
-                else:
-                    sampled_predictions[agent] = deepcopy(new_obs[agent][self.obs_map['team']])
+                    
 
             all_same = all(pf_obs[agent2]['confidence'] == self.min_confidence_agent[agent][1] for agent2 in pf_obs.keys())
             if all_same or self.consecutive_agent_count[agent] > self.force_change_count:
@@ -185,35 +191,31 @@ class PFWrapper(MultiAgentEnv):
                 self.min_confidence_agent[agent] = (ran_agent, pf_obs[ran_agent]['confidence'])
 
             if self.switch_count[agent] >= 0:
-                if self.switch_count[agent] == self.switch_time or self.min_confidence_agent[agent][0] == self.observing_agent[agent]:
-                    if 'football' in self.name:
-                        self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][self.obs_map['self_pos']],action_dict[agent])
-                    elif 'fire' in self.name:
-                        update_agent = self.min_confidence_agent[agent][0]
-                        if 'agent' in update_agent:  
-                            self.particle_filters[agent].update_observation(update_agent,infos['__common__']['decomposed_obs'][update_agent]['self_pos'],action_dict[agent])
-                        else:
-                            self.particle_filters[agent].update_observation(update_agent,obs['target'],action_dict[agent])
-                    else:
-                        self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][self.obs_map['self_pos']])
-                    self.switch_count[agent] = 0
-                    if self.min_confidence_agent[agent][0] == self.observing_agent[agent]:
-                        self.consecutive_agent_count[agent] += 1
-                    else:
-                        self.consecutive_agent_count[agent] = 0
-                    self.observing_agent[agent] = self.min_confidence_agent[agent][0]
-                else:
+                if self.switch_count[agent] != self.switch_time:
                     self.switch_count[agent] += 1
-            #if 'football' in self.name:
-            #    team_slice = self.obs_map['team']
-            #    team_noise = self.temp_noise[agent]['team']
-            #    error = np.mean((obs[agent][team_slice] - team_noise - new_obs[agent][team_slice]) ** 2)
-            #elif 'fire' in self.name:
-            #    error = np.mean((obs[agent] - new_obs[agent]) ** 2)
-            #else:
-            #    state_slice = slice(self.obs_map['target_pos'].start,self.obs_map['team'].stop)
-            #    agent_noise = np.concatenate((np.zeros((self.dim,)),self.temp_noise[agent]['team']))
-            #    error = self.permutation_invariant_error(obs[agent][state_slice] - agent_noise, new_obs[agent][state_slice])
+                #if self.switch_count[agent] == self.switch_time or self.min_confidence_agent[agent][0] == self.observing_agent[agent]:
+                if 'football' in self.name:
+                    self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][self.obs_map['self_pos']],action_dict[agent])
+                elif 'fire' in self.name:
+                    update_agent = self.min_confidence_agent[agent][0]
+                    if update_agent not in pf_obs:
+                        agent = 'fire' #cannot observe agents that are out of range
+                    #else:
+                    if 'agent' in update_agent:
+                        self.particle_filters[agent].update_observation(update_agent,infos['__common__']['decomposed_obs'][update_agent]['self_pos'],action_dict[agent])
+                    else:
+                        self.particle_filters[agent].update_observation(update_agent,infos['__common__']['decomposed_obs'][agent]['fire'],infos['__common__']['decomposed_obs'][agent]['self_pos'])
+                else:
+                    self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][self.obs_map['self_pos']])
+                self.switch_count[agent] = 0
+                if self.min_confidence_agent[agent][0] == self.observing_agent[agent]:
+                    self.consecutive_agent_count[agent] += 1
+                else:
+                    self.consecutive_agent_count[agent] = 0
+                self.observing_agent[agent] = self.min_confidence_agent[agent][0]
+                #else:
+                #    self.switch_count[agent] += 1
+
             if 'fire' in self.name:
                 error = self.env.team_error(self.particle_filters[agent].team,agent)
             else:
@@ -275,42 +277,11 @@ class PFWrapper(MultiAgentEnv):
     def close(self):
         self.env.unwrapped.close()
 
-    '''
-    def render_rgb(self):
-        img = self.env.render_rgb()
-        return img
-    '''
-
     def set_difficulty(self, difficulty):
         self.env.set_difficulty(difficulty)
 
-    def permutation_invariant_error(self, pred, target):
-        '''
-        pred:   ((n_agents-1) * dim,)
-        target: ((n_agents-1) * dim,)
-
-        Returns:
-            scalar, minimum assignment distance over cyclic permutations
-            of the (len(self.agents)-1) teammates
-        '''
-
-        n_teammates = len(self.agents) - 1
-
-        # Reshape to (n_teammates, dim)
-        pred = pred[self.dim:].reshape(n_teammates, self.dim)
-        target = target[self.dim:].reshape(n_teammates, self.dim)
-
-        idx = np.arange(n_teammates)
-        best = np.inf
-        for shift in range(n_teammates):
-            perm = np.roll(idx, shift)
-            dist = np.linalg.norm(pred[perm] - target, axis=1).sum()
-            best = min(best, dist)
-
-        return best
-
     def render_rgb(self):
-        return self.env.render_rgb()
+        return self.render_rgb_fire()
         #return self.render_rgb_drones()
 
     def render_rgb_pp(self, show: bool = False, window_name: str = "PredatorPrey"):
@@ -1064,3 +1035,93 @@ class PFWrapper(MultiAgentEnv):
             cv2.waitKey(1)
 
         return img
+
+    def render_rgb_fire(self, show: bool = False, window_name: str = "FireEnv", scale: int = 10):
+        """
+        Draw the fire grid (from DroneFireSim.image()) with true drone positions
+        as solid markers, then overlay each drone's particle-filter belief about
+        its teammates' positions as semi-transparent ghost markers of the same
+        color, upscaled so the (GRID_SIZE, GRID_SIZE) grid is legible.
+
+        Unlike the other envs, PFWrapper.new_obs for fire only carries each
+        agent's own local fire window (see FireParticleFilter.get_observation,
+        which is popped into new_obs[agent] in step()), not other-agent position
+        estimates. So estimated positions are read directly off
+        self.particle_filters[observer].clusters[other_name].estimate_mean_position(),
+        which is the same state used for the confidence-based observation
+        switching in step().
+        """
+        import cv2
+        import numpy as np
+
+        if not hasattr(self, "obs") or self.obs is None:
+            raise ValueError("self.obs is None. Call reset() or step() before drawing.")
+
+        sim = self.env.env
+        grid = np.asarray(sim.image(), dtype=np.uint8)
+        grid_h, grid_w = grid.shape[0], grid.shape[1]
+
+        frame = cv2.resize(
+            grid, (grid_w * scale, grid_h * scale), interpolation=cv2.INTER_NEAREST
+        )
+
+        def world_to_pixel(pos):
+            r, c = float(pos[0]), float(pos[1])
+            px = int(np.clip(c * scale + scale / 2, 0, frame.shape[1] - 1))
+            py = int(np.clip(r * scale + scale / 2, 0, frame.shape[0] - 1))
+            return px, py
+
+        palette = [
+            (230, 90, 40), (40, 160, 230), (230, 190, 40), (150, 60, 200),
+            (40, 200, 130), (230, 40, 150), (120, 120, 230), (200, 130, 40),
+        ]
+        agent_color = {name: palette[i % len(palette)] for i, name in enumerate(self.agents)}
+
+        true_radius = max(3, scale // 2)
+
+        for name in self.agents:
+            px, py = world_to_pixel(sim.drone_states[name])
+            color = agent_color[name]
+            cv2.circle(frame, (px, py), true_radius, color, -1)
+            cv2.circle(frame, (px, py), true_radius, (0, 0, 0), 1)
+            cv2.putText(
+                frame,
+                str(name),
+                (px + true_radius + 2, py - true_radius - 2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.35,
+                (0, 0, 0),
+                1,
+                cv2.LINE_AA,
+            )
+
+        if hasattr(self, "particle_filters") and self.particle_filters is not None:
+            overlay = frame.copy()
+            estimate_alpha = 0.4
+            estimate_radius = max(3, scale // 2)
+
+            for observer_name in self.agents:
+                pf = self.particle_filters.get(observer_name)
+                clusters = getattr(pf, "clusters", None)
+                if not clusters:
+                    continue
+
+                for other_name, cluster in clusters.items():
+                    if other_name == observer_name or other_name == "target" or cluster is None:
+                        continue
+
+                    est_pos, _ = cluster.estimate_mean_position()
+                    px, py = world_to_pixel(est_pos)
+                    color = agent_color.get(other_name, (180, 180, 180))
+
+                    cv2.circle(overlay, (px, py), estimate_radius, color, -1)
+                    cv2.circle(overlay, (px, py), max(1, estimate_radius // 3), (255, 255, 255), -1)
+                    cv2.circle(overlay, (px, py), estimate_radius, (0, 0, 0), 1)
+
+            frame = cv2.addWeighted(overlay, estimate_alpha, frame, 1.0 - estimate_alpha, 0)
+
+        if show:
+            cv2.imshow(window_name, frame[:, :, ::-1])
+            cv2.waitKey(1)
+
+        return frame

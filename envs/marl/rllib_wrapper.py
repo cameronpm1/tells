@@ -96,7 +96,10 @@ class RLLibWrapper(MultiAgentEnv):
 
         if self.noise is not None:
             if 'fire' in self.name:
-                self.temp_noise = self.noise
+                for agent in self.agents:
+                    noise_old = self.temp_noise.get(agent, np.zeros((self.n_agents-1)*self.dim))
+                    self.temp_noise[str(agent)+'_old'] = noise_old
+                    self.temp_noise[agent] = infos['__common__']['decomposed_obs'][agent]['noise']
             else:
                 for agent in self.agents:
                     target_noise = np.random.normal(0, self.noise['target'], size=self.dim,)

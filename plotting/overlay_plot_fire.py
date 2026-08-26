@@ -141,7 +141,7 @@ def _best_teammate_permutation(estimate, true_relative):
     return best_perm
 
 
-def load_episode_beliefs(results_dir: str, episode: int = 1):
+def load_episode_beliefs(results_dir: str, episode: int = 1, permutation_invariant: bool = True):
     '''
     load a single episode's eval results and, for each step, convert every
     drone's belief about its teammates (infos['__common__']['sampled_predictions'],
@@ -150,7 +150,20 @@ def load_episode_beliefs(results_dir: str, episode: int = 1):
     sampled_predictions[observer] is that observer's (fixed-slot) estimate
     of decomposed_obs[observer]['team'] - see _best_teammate_permutation
     for how a slot gets matched up with a specific teammate name, since
-    DroneFireEnv's belief model doesn't guarantee a fixed slot ordering
+    the allocentric NN belief model doesn't guarantee a fixed slot ordering
+    (it's trained with FirePermutationInvariantLoss, learn/belief/models.py,
+    which takes the min over all 3 teammate orderings every step, so
+    training never penalizes slot order)
+
+    the particle-filter path is different: FireParticleFilter
+    (envs/marl/particle_filters.py) keeps one identity-labeled cluster per
+    named teammate (self.clusters[name]), and pf_wrapper.py concatenates
+    sampled_predictions in that same fixed per-observer `others` order
+    (start_dict's key order in PFWrapper.__init__, which walks self.agents
+    the same way `others` below does) - so a PF sampled_predictions slot
+    already corresponds to a specific, known teammate, and searching for
+    the best-fit permutation would silently paper over genuine PF
+    tracking/identity confusion instead of reporting it as belief error
 
     each estimate is anchored to the observer's own ground-truth position
     (decomposed_obs[observer]['self_pos'], never noised - see
@@ -163,6 +176,12 @@ def load_episode_beliefs(results_dir: str, episode: int = 1):
         directory containing the per-episode <idx>.npz result files
     episode:int
         which episode file to load (loads '<episode>.npz')
+    permutation_invariant:bool
+        True (default) for the allocentric NN belief model: match each
+        predicted slot to whichever teammate minimizes error, the same way
+        DroneFireEnv.team_error scores it. False for the particle-filter
+        path: skip the search and zip predicted slots to `others` in their
+        already-known fixed order
 
     returns
     -------
@@ -203,7 +222,10 @@ def load_episode_beliefs(results_dir: str, episode: int = 1):
             true_relative = np.asarray(decomposed_obs[observer]['team'], dtype=float)
             estimate = np.asarray(sampled_predictions[observer], dtype=float).reshape(len(others), -1)
 
-            perm = _best_teammate_permutation(estimate, true_relative)
+            if permutation_invariant:
+                perm = _best_teammate_permutation(estimate, true_relative)
+            else:
+                perm = range(len(others))
 
             for slot_idx, true_idx in enumerate(perm):
                 target = others[true_idx]

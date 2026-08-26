@@ -112,6 +112,7 @@ if __name__ == "__main__":
     parser.add_argument('--model_dir', type=str, default=None, help='Model directory for evaluation')
     parser.add_argument('--belief_config', type=str, default=None, help='Config file for belief model')
     parser.add_argument('--belief_dir', type=str, default=None, help='Model directory for belief model')
+    parser.add_argument('--belief_lr', type=float, default=None, help='Override the config lr when continuing belief training from --belief_dir')
     parser.add_argument('--save_dir', type=str, default=None, help='Directory to save evaluation data to')
     parser.add_argument('--n_workers', type=int, default=1, help='Number of parallel workers to use for data collection')
     parser.add_argument('--no_eval_videos', action='store_true', help='Skip GIF rendering during MARL eval.')
@@ -137,7 +138,7 @@ if __name__ == "__main__":
 
         print('Evaluating RL model with config:', args.config)
         print('Loading model from:', args.model_dir)
-        eval(args.config,args.model_dir,args.runs, save_videos=not args.no_eval_videos)
+        eval(args.config,args.model_dir,args.runs, save_videos=not args.no_eval_videos, collect_results=args.collect_results)
 
     elif args.command == 'marl_eval_belief':
 
@@ -189,14 +190,20 @@ if __name__ == "__main__":
             print('Loading model from:', args.model_dir)
             print('Saving data to:', save_dir)
             
-            collect_data(args.config, args.model_dir, save_dir, n_runs=args.runs, n_workers=args.n_workers)
+            collect_data(
+                args.config,
+                args.model_dir,
+                save_dir,
+                n_runs=args.runs,
+                n_workers=args.n_workers,
+            )
 
     elif 'belief_train' in args.command:
 
         from learn.belief.train import train
 
         print('Training belief model with config:', args.config)
-        train(args.config)
+        train(args.config, belief_dir=args.belief_dir, lr=args.belief_lr)
 
     elif 'belief_eval' in args.command:
 

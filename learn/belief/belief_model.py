@@ -227,7 +227,7 @@ class BeliefModel(pl.LightningModule):
                  output_noise: float=0.0,
                  window_size: int=61,
                  num_frames: int=10,
-                 num_classes: int=4,
+                 num_classes: int=2,
                  **kwargs,
         ) -> None:
         super().__init__()
@@ -265,6 +265,17 @@ class BeliefModel(pl.LightningModule):
             self.vae = False
         if self.hparams.model_name == 'fire_NN':
             self.model = fire_NN(
+                self.hparams.input_channels,
+                self.hparams.output_channels,
+                window_size=self.hparams.window_size,
+                num_frames=self.hparams.num_frames,
+                num_classes=self.hparams.num_classes,
+            )
+            self.loss_func = self.model.loss
+            self.val_loss_func = self.model.val_loss
+            self.vae = False
+        if self.hparams.model_name == 'fire_CNN':
+            self.model = fire_CNN(
                 self.hparams.input_channels,
                 self.hparams.output_channels,
                 window_size=self.hparams.window_size,

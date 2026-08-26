@@ -28,6 +28,7 @@ def eval(
         belief_config_dir: str = None,
         save_videos: bool = True,
         collect_results: bool = False,
+        belief_model_override = None,
     ):
 
     '''
@@ -41,11 +42,21 @@ def eval(
         ray checkpoint directory
     n_runs:int
         number of runs to test for
+    belief_model_override:
+        if given, use this object as belief_kwargs['model'] directly instead
+        of loading one from belief_dir/belief_config_dir - lets callers drop
+        in a stand-in model (e.g. one that always predicts teammates far
+        outside the observation window, for counterfactual analysis) without
+        needing a real checkpoint on disk
     '''
     cfg = load_config(config_dir)
     belief_kwargs = {}
 
-    if belief_dir is not None:
+    if belief_model_override is not None:
+        belief_kwargs['on'] = True
+        belief_kwargs['model'] = belief_model_override
+        belief_kwargs['min_obs'] = cfg['min_obs']
+    elif belief_dir is not None:
         if load_model is None:
             raise ImportError('Belief model loading is not available in this environment.')
         belief_kwargs['on'] = True
@@ -76,31 +87,25 @@ def eval(
         exit()
 
     if save_videos:
-        video_save_dir = os.path.join(checkpoint_dir,'videos')
+        if belief_kwargs['on']:
+            video_save_dir = os.path.join(checkpoint_dir,'videos_allocentric')
+        else:
+            video_save_dir = os.path.join(checkpoint_dir,'videos')
         mkdir(video_save_dir)
     else: 
         video_save_dir = ''
 
     if collect_results:
-        results_save_dir = os.path.join(checkpoint_dir,'results')
+        if belief_kwargs['on']:
+            results_save_dir = os.path.join(checkpoint_dir,'results_allocentric')
+        else:
+            results_save_dir = os.path.join(checkpoint_dir,'results')
         mkdir(results_save_dir)
     else:
         results_save_dir = None
 
     summaries = []
     for i in range(n_runs):
-        '''
-        if belief:
-            eval_single_episode_belief(
-                env=env,
-                cfg=cfg,
-                algo=algo,
-                belief_model=belief_model,
-                save_dir=save_dir,
-                idx=i,
-            )
-        else:
-        '''
         summaries.append(
             eval_single_episode(
                 env=env,

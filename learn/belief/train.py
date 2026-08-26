@@ -32,7 +32,7 @@ def seed(cfg):
         torch.cuda.manual_seed(cfg.seed)
 
 
-def train(config_filepath):
+def train(config_filepath, belief_dir: str = None, lr: float = None):
     config_filepath = config_filepath
     cfg = load_config(filepath=config_filepath)
     pprint.pprint(cfg)
@@ -46,8 +46,18 @@ def train(config_filepath):
                         cfg.label])
     cfg['log_dir'] = log_dir
 
+    if lr is not None:
+        print('Overriding config lr with:', lr)
+        cfg['lr'] = lr
+
     model = BeliefModel(**cfg)
-    
+
+    if belief_dir is not None:
+        checkpoint_filepath = glob.glob(os.path.join(belief_dir, '*.ckpt'))[-1]
+        print('Continuing training from checkpoint:', checkpoint_filepath)
+        ckpt = torch.load(checkpoint_filepath)
+        model.load_state_dict(ckpt['state_dict'])
+
     # define callback for selecting checkpoints during training
     checkpoint_callback = ModelCheckpoint(
         dirpath=log_dir + "/lightning_logs/checkpoints/{epoch}_{val_loss}",

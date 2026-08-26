@@ -49,12 +49,13 @@ class fire_NN(nn.Module):
 	  pos_change ((min_obs-1) * 2),
 	  last_team_obs ((n_agents-1) * 2) ]
 
-	each fire map is one-hot encoded over num_classes fire states (channels
-	first) rather than a single scalar cell value. the fire_maps prefix is
-	reshaped back into a (num_frames * num_classes, window_size, window_size)
-	image stack and fed to a cnn head; everything after it (pos over time +
-	last team estimate) is fed to a linear head. the two heads are fused
-	before the output layer.
+	each fire map is encoded over num_classes fire states (channels first,
+	RED/BLACK only - GREEN/WHITE are all-zero, see _one_hot_fire_grid) rather
+	than a single scalar cell value. the fire_maps prefix is reshaped back
+	into a (num_frames * num_classes, window_size, window_size) image stack
+	and fed to a cnn head; everything after it (pos over time + last team
+	estimate) is fed to a linear head. the two heads are fused before the
+	output layer.
 	'''
 
 	def __init__(self,
@@ -62,7 +63,7 @@ class fire_NN(nn.Module):
                 output_channels:int,
 				window_size:int = 61,
 				num_frames:int = 10,
-				num_classes:int = 4,
+				num_classes:int = 2,
 				p_mc_dropout = 0.5) :
 
 		super().__init__()
@@ -132,6 +133,78 @@ class fire_NN(nn.Module):
 		combined = self.fusion(combined)
 
 		out = self.out(combined)
+
+		return out.squeeze(0) if unbatched else out
+
+class fire_CNN(nn.Module):
+	'''
+	cnn-only belief model for the fire env.
+
+	takes the same flattened observation as fire_NN (see fire_NN docstring
+	for the layout), but only runs the cnn head on the fire_maps prefix;
+	the trailing linear input (pos over time + last team estimate) is
+	sliced off and ignored.
+	'''
+
+	def __init__(self,
+                input_channels:int,
+                output_channels:int,
+				window_size:int = 61,
+				num_frames:int = 10,
+				num_classes:int = 2,
+				p_mc_dropout = 0.5) :
+
+		super().__init__()
+
+		self.loss = FirePermutationInvariantLoss()
+		self.val_loss = FirePermutationInvariantLoss()
+
+		self.p_mc_dropout = p_mc_dropout
+
+		self.window_size = window_size
+		self.num_frames = num_frames
+		self.num_classes = num_classes
+		self.fire_input_size = num_frames * num_classes * window_size * window_size
+
+		# ---------- cnn head: reconstructed fire maps over time ----------
+		self.cnn_head = nn.Sequential(
+			nn.Conv2d(num_frames * num_classes, 32, kernel_size=5, stride=2, padding=2),
+			nn.ReLU(inplace=True),
+			nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2),
+			nn.ReLU(inplace=True),
+			nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+			nn.ReLU(inplace=True),
+			# AdaptiveAvgPool2d has no deterministic CUDA backward; conv stack
+			# always yields an 8x8 map here, so a plain AvgPool2d(2) is
+			# equivalent and keeps training deterministic
+			nn.AvgPool2d(kernel_size=2, stride=2),
+		)
+		self.cnn_proj = nn.Linear(128 * 4 * 4, 64)
+
+		# ---------- head: cnn features straight to output ----------
+		self.head = nn.Sequential(
+			nn.Linear(64, 128),
+			nn.ReLU(inplace=True),
+			nn.Linear(128, 64),
+			nn.ReLU(inplace=True),
+		)
+		self.out = nn.Linear(64, output_channels)
+
+	def forward(self, x):
+		unbatched = x.dim() == 1
+		if unbatched:
+			x = x.unsqueeze(0)
+
+		fire_x = x[:, :self.fire_input_size].contiguous().view(
+			-1, self.num_frames * self.num_classes, self.window_size, self.window_size
+		)
+
+		fire_feat = self.cnn_head(fire_x)
+		fire_feat = torch.flatten(fire_feat, 1)
+		fire_feat = F.relu(self.cnn_proj(fire_feat))
+
+		out = self.head(fire_feat)
+		out = self.out(out)
 
 		return out.squeeze(0) if unbatched else out
 

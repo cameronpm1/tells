@@ -5,8 +5,8 @@ import numpy as np
 
 def mkdir(folder):
     if os.path.exists(folder):
-        shutil.rmtree(folder)
-    os.makedirs(folder)
+        shutil.rmtree(folder, ignore_errors=True)
+    os.makedirs(folder, exist_ok=True)
 
 def split_data(
     datadir: str,

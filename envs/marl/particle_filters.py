@@ -27,24 +27,27 @@ class Particle:
             raise ValueError("Velocity direction vector cannot be zero")
         self.velocity_dir /= norm
 
-    def add_control(self, rel_vel, scale_mag=0.1):
+    def add_control(self, rel_vel, scale_mag=0.1, discrete=False):
         '''
         changes particle velocity vector by rel_velocity,
         '''
 
-        if np.linalg.norm(rel_vel) > 0:
-            change_vel = rel_vel/np.linalg.norm(rel_vel)
+        if not discrete:
+            if np.linalg.norm(rel_vel) > 0:
+                change_vel = rel_vel/np.linalg.norm(rel_vel)
 
-            new_velocity = self.velocity_dir + change_vel
-            self.speed = np.linalg.norm(new_velocity)
-            self.velocity_dir = new_velocity/self.speed
-            self.speed = np.clip(self.speed,0,self.max_speed)
-
-        #self.velocity = rel_vel
-        #self.speed = np.clip(np.linalg.norm(self.velocity),0,self.max_speed)
+                new_velocity = self.velocity_dir + change_vel
+                self.speed = np.linalg.norm(new_velocity)
+                self.velocity_dir = new_velocity/self.speed
+                self.speed = np.clip(self.speed,0,self.max_speed)
+        else:
+            if np.linalg.norm(rel_vel) > 0:
+                self.speed = self.max_speed
+                self.velocity_dir = rel_vel / np.linalg.norm(rel_vel)
+            else:
+                self.speed = 0
 
     def set_position(self, position):
-
         self.position = position
     
     def propagate(self, dt, process_noise_std_pos=0.01, process_noise_std_dir=0.03):
@@ -319,13 +322,13 @@ class FireDroneParticleCluster(ParticleCluster):
         mean_pos: list[float] = [0.0,0.0],
         std_dev: list[float] = [0.0,0.0],
         resample_threshold: float = 50,
-        extinguish_threshold: float = 0.3,
+        extinguish_threshold: float = 0.6,
         dim: int = 2,
         max_speed: float = 1.0,
         dt: float = 1.0,
         target = False,
-        process_noise_std_pos: float = 0.001,
-        process_noise_std_dir: float = 0.01,
+        process_noise_std_pos: float = 0.4,
+        process_noise_std_dir: float = 0.2,
     ):
         super().__init__(
             control_function,
@@ -368,7 +371,11 @@ class FireDroneParticleCluster(ParticleCluster):
             else:
                 vel_cmd = ACTION_LIBRARY[action].astype(float)
 
-            particle.add_control(vel_cmd)
+            particle.add_control(vel_cmd,discrete=True)
+            if np.linalg.norm(vel_cmd) > 1:
+                particle.speed = self.max_speed * 1.4
+            else:
+                particle.speed = self.max_speed
             particle.propagate(dt, process_noise_std_pos=self.process_noise_std_pos, process_noise_std_dir=self.process_noise_std_dir)
 
         if extinguish_count/num_particles > self.extinguish_threshold:
@@ -761,7 +768,7 @@ class FireParticleFilter(PredatorPreyParticleFilter):
         std_dev: float = 1.0,
         max_speed: float = 1.0,
         speed_ratio: float = 0.5,
-        measurement_std: float = 0.3,
+        measurement_std: float = 1.0,
         dt: float = 1.0
     ):
         self.obs_map = obs_map
@@ -804,7 +811,8 @@ class FireParticleFilter(PredatorPreyParticleFilter):
 
         self.observation_range = (len(obs[self.agent_name]['fire']) - 1) // 2
 
-        self.fire = obs['target']
+        self.fire = np.zeros_like(obs['target'])
+        self._update_fire_window(obs[self.agent_name]['fire'], obs[self.agent_name]['self_pos'])
         self.fire_confidence = 1.0
 
         self.extinguish_confidence_decay = ((self.observation_range * 2 + 1) ** 2 - 100 ) / ((self.observation_range * 2 + 1) ** 2)
@@ -817,7 +825,7 @@ class FireParticleFilter(PredatorPreyParticleFilter):
         measurement_std: float = None,
     ):
         if agent_name == 'target':
-            self.fire = deepcopy(observed_value)
+            self._update_fire_window(observed_value, action)
             self.fire_confidence = 1.0
             return
 
@@ -845,7 +853,8 @@ class FireParticleFilter(PredatorPreyParticleFilter):
 
         self.neighboring = self._count_green_neighboring_red(self.fire)
         self.fire_confidence *= ((self.observation_range * 2 + 1) ** 2 - self.neighboring ) / ((self.observation_range * 2 + 1) ** 2)
-        self.fire = self.target_control_function(self.fire)
+        drone_positions = np.array(list(team_pos.values()), dtype=float)
+        self.fire = self.target_control_function(self.fire, drone_positions=drone_positions)
 
         target = self.fire
 
@@ -863,6 +872,7 @@ class FireParticleFilter(PredatorPreyParticleFilter):
         self,
         pos,
     ):
+        self.pos = pos
         obs = {}
         for name,cluster in self.clusters.items():
             if name == 'target':
@@ -876,6 +886,27 @@ class FireParticleFilter(PredatorPreyParticleFilter):
         obs[self.agent_name] = self._combine_obs(obs, pos, self.fire)
 
         return obs
+
+    def _update_fire_window(self, window, center_pos):
+        window = np.asarray(window)
+        radius = self.observation_range
+        rows, cols = self.fire.shape
+
+        r0 = int(round(center_pos[0])) - radius
+        c0 = int(round(center_pos[1])) - radius
+
+        src_r0 = max(0, -r0)
+        src_c0 = max(0, -c0)
+        dst_r0 = max(0, r0)
+        dst_c0 = max(0, c0)
+
+        src_r1 = window.shape[0] - max(0, (r0 + window.shape[0]) - rows)
+        src_c1 = window.shape[1] - max(0, (c0 + window.shape[1]) - cols)
+        dst_r1 = dst_r0 + (src_r1 - src_r0)
+        dst_c1 = dst_c0 + (src_c1 - src_c0)
+
+        if src_r1 > src_r0 and src_c1 > src_c0:
+            self.fire[dst_r0:dst_r1, dst_c0:dst_c1] = window[src_r0:src_r1, src_c0:src_c1]
 
     def _local_fire_window(self, fire_state, agent_pos):
         r, c = agent_pos
@@ -946,10 +977,10 @@ class FireParticleFilter(PredatorPreyParticleFilter):
 
         rows, cols = fire.shape
 
-        r_min = max(0, r - extinguish_radius)
-        r_max = min(rows, r + extinguish_radius + 1)
-        c_min = max(0, c - extinguish_radius)
-        c_max = min(cols, c + extinguish_radius + 1)
+        r_min = np.clip(r - extinguish_radius, 0, rows)
+        r_max = np.clip(r + extinguish_radius + 1, 0, rows)
+        c_min = np.clip(c - extinguish_radius, 0, cols)
+        c_max = np.clip(c + extinguish_radius + 1, 0, cols)
 
         rr, cc = np.meshgrid(
             np.arange(r_min, r_max),
