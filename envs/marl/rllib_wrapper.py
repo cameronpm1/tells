@@ -101,12 +101,13 @@ class RLLibWrapper(MultiAgentEnv):
                     self.temp_noise[str(agent)+'_old'] = noise_old
                     self.temp_noise[agent] = infos['__common__']['decomposed_obs'][agent]['noise']
             else:
+                team_size = self.env.obs_map['team'].stop - self.env.obs_map['team'].start
                 for agent in self.agents:
                     target_noise = np.random.normal(0, self.noise['target'], size=self.dim,)
                     obs[agent][self.env.obs_map['target_pos']] = obs[agent][self.env.obs_map['target_pos']] + target_noise
                     if not self.belief:
-                        team_old = self.temp_noise.get(agent, {}).get('team', np.zeros((self.n_agents-1)*self.dim))
-                        team_noise = np.random.normal(0, self.noise['team'], size=(self.n_agents-1)*self.dim,)
+                        team_old = self.temp_noise.get(agent, {}).get('team', np.zeros(team_size))
+                        team_noise = np.random.normal(0, self.noise['team'], size=team_size,)
                         obs[agent][self.env.obs_map['team']] = obs[agent][self.env.obs_map['team']] + team_noise
                         self.temp_noise[agent] = {'team': team_noise, 'team_old': team_old, 'target': target_noise}
                         if 'football' in self.name:

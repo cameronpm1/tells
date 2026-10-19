@@ -249,11 +249,73 @@ def predator_prey_obs_packaging(
 
     return obs_dict, _transform_predator_prey_pred
 
+def predator_prey_swarm_obs_packaging(
+        obs_history,
+        obs_map,
+        agent_list,
+        min_obs=10,
+        noise: Optional[dict] = None
+    ):
+
+    obs_dict = {}
+
+    for agent in agent_list:
+        pos = obs_history[-1][agent][obs_map['self_pos']]
+        allocentric_obs = []
+
+        for i in range(min_obs):
+            idx = min_obs - i
+            if idx >= len(obs_history):
+                idx = -1
+            else:
+                idx *= -1
+
+            self_pos_ts = obs_history[idx][agent][obs_map['self_pos']] - pos
+            target_obs_ts = obs_history[idx][agent][obs_map['target_pos']] + self_pos_ts # #prev pos rel to current pos
+
+            if i == min_obs - 1:
+                obs_ts = target_obs_ts
+                allocentric_obs = np.concatenate((np.array(allocentric_obs).flatten(),obs_ts))
+            else:
+                obs_ts = np.concatenate((self_pos_ts,target_obs_ts)).flatten()
+                allocentric_obs.append(obs_ts)
+
+        allocentric_obs = np.concatenate((allocentric_obs,obs_history[-1][agent][obs_map['target_goal']]))
+
+        team_obs = obs_history[-1][agent][obs_map['team']]
+        if len(obs_history) > 1:
+            last_obs = deepcopy(obs_history[-2][agent])
+            last_obs[obs_map['swarm_pos']] += last_obs[obs_map['self_pos']] - pos
+            last_team_obs = last_obs[obs_map['team']]
+        else:
+            last_team_obs = deepcopy(team_obs)
+
+        if noise is not None and agent in noise:
+            team_noise = noise[agent]['team']
+            team_noise_old = noise[agent]['team_old']
+        else:
+            team_noise = np.zeros_like(team_obs)
+            team_noise_old = np.zeros_like(last_team_obs)
+
+        data_point = {}
+        data_point['input'] = np.concatenate((allocentric_obs,last_team_obs))
+        data_point['label'] = np.concatenate((last_team_obs - team_noise_old,team_obs - team_noise))
+
+        obs_dict[agent] = data_point
+
+    return obs_dict, _transform_predator_prey_swarm_pred
+
 
 
 def _transform_predator_prey_pred(obs, obs_map, agent, prediction):
 
     obs[agent][obs_map['team']] = prediction[4:]
+
+    return obs
+
+def _transform_predator_prey_swarm_pred(obs, obs_map, agent, prediction):
+
+    obs[agent][obs_map['team']] = prediction[obs_map['team'].stop - obs_map['team'].start:]
 
     return obs
 

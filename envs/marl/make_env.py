@@ -32,7 +32,10 @@ def make_marl_env(
 
     env_name = config['env']['scenario']
 
-    if 'predator_prey' in env_name:
+    if 'predator_prey_swarm' in env_name:
+        return make_predator_prey_swarm_env(config,seed,wrap,eval,render_mode,belief_kwargs)
+
+    elif 'predator_prey' in env_name:
         return make_predator_prey_env(config,seed,wrap,eval,render_mode,belief_kwargs)
     
     elif 'drones' in env_name:
@@ -113,6 +116,65 @@ def make_predator_prey_env(
         pass
     else:
         print('Wrapper not supported for mpe2 env...')
+
+    return env
+
+
+def make_predator_prey_swarm_env(
+        config: dict,
+        seed: Optional[int] = None,
+        wrap: Optional[str] = 'rllib',
+        eval: bool = False,
+        render_mode: Optional[str] = None,
+        belief_kwargs: Optional[dict] = None,
+):
+    '''
+    initialize predator_prey_swarm_env
+
+    input
+    -----
+    config_dir:dict
+        config dictionary
+    seed:int
+        seed
+    wrap:bool
+        if True wraps env in rllib wrapper
+    '''
+
+    from controllers.predator_prey_swarm_control import adversary_controller
+    from envs.marl.predator_prey_swarm_env import PredatorPreySwarmEnv, parallel_env as swarm_parallel_env
+
+    scenario_kwargs = config['env']['scenario_kwargs']
+    scenario_kwargs['agent_list'] = config['env']['agent_list']
+    env = swarm_parallel_env(
+        scenario_kwargs=scenario_kwargs,
+        max_cycles=config['env']['max_episode_length'],
+        render_mode = render_mode,
+    )
+
+    env = PredatorPreySwarmEnv(
+        mpeEnv=env,
+        agents=config['env']['learned_agent_list'],
+        adversary_controller=adversary_controller,
+        reward_kwargs=config['env'].get('reward_kwargs'),
+        controller_kwargs=config['env'].get('controller_kwargs'),
+        seed = seed,
+        local_observations = config['env']['local_observations'],
+    )
+
+    if wrap == 'rllib':
+        env = RLLibWrapper(
+            env=env,
+            name='predator_prey_swarm',
+            obs_packaging_func=predator_prey_swarm_obs_packaging,
+            eval=eval,
+            belief_kwargs=belief_kwargs,
+            noise=config['env']['noise']
+        )
+    elif wrap is None:
+        pass
+    else:
+        print('Wrapper not supported for predator prey swarm env...')
 
     return env
 

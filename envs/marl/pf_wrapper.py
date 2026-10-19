@@ -195,7 +195,16 @@ class PFWrapper(MultiAgentEnv):
                     self.switch_count[agent] += 1
                 #if self.switch_count[agent] == self.switch_time or self.min_confidence_agent[agent][0] == self.observing_agent[agent]:
                 if 'football' in self.name:
-                    self.particle_filters[agent].update_observation(self.min_confidence_agent[agent][0],obs[self.min_confidence_agent[agent][0]][self.obs_map['self_pos']],action_dict[agent])
+                    observed = self.min_confidence_agent[agent][0]
+                    ball_obs = None
+                    if observed == 'target':
+                        # observing the adversary also reveals the true ball
+                        true_obs = infos['__common__']['obs_no_noise'][agent]
+                        ball_obs = (
+                            true_obs[self.obs_map['ball_pos']] + true_obs[self.obs_map['self_pos']],
+                            true_obs[self.obs_map['ball_owner']],
+                        )
+                    self.particle_filters[agent].update_observation(observed,obs[observed][self.obs_map['self_pos']],action_dict[agent],ball_obs=ball_obs)
                 elif 'fire' in self.name:
                     update_agent = self.min_confidence_agent[agent][0]
                     if update_agent not in pf_obs:
@@ -281,8 +290,9 @@ class PFWrapper(MultiAgentEnv):
         self.env.set_difficulty(difficulty)
 
     def render_rgb(self):
-        return self.render_rgb_fire()
+        #return self.render_rgb_fire()
         #return self.render_rgb_drones()
+        return self.env.render_rgb()
 
     def render_rgb_pp(self, show: bool = False, window_name: str = "PredatorPrey"):
         """

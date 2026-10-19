@@ -138,7 +138,8 @@ if __name__ == "__main__":
 
         print('Evaluating RL model with config:', args.config)
         print('Loading model from:', args.model_dir)
-        eval(args.config,args.model_dir,args.runs, save_videos=not args.no_eval_videos, collect_results=args.collect_results)
+        eval(args.config,args.model_dir,args.runs, save_videos=not args.no_eval_videos, collect_results=args.collect_results,
+             n_workers=args.n_workers)
 
     elif args.command == 'marl_eval_belief':
 
@@ -154,7 +155,8 @@ if __name__ == "__main__":
             args.belief_dir,
             args.belief_config,
             save_videos=not args.no_eval_videos,
-            collect_results=args.collect_results
+            collect_results=args.collect_results,
+            n_workers=args.n_workers,
         )
 
     elif args.command == 'marl_train_belief':
@@ -231,7 +233,8 @@ if __name__ == "__main__":
             args.model_dir,
             args.runs,
             save_videos=not args.no_eval_videos,
-            collect_results=args.collect_results
+            collect_results=args.collect_results,
+            n_workers=args.n_workers,
         )
 
     elif 'pf_train' == args.command:

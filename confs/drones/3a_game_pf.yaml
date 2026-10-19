@@ -9,7 +9,7 @@ alg:
   type : ppo
   lr : 0.00003
   gamma: 0.99
-  nenvs : 6
+  nenvs : 2
   cpu_envs: 2
   target_ent: 0.1
   batch: 4096

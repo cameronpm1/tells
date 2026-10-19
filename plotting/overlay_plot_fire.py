@@ -12,7 +12,7 @@ from matplotlib.path import Path
 
 RESULTS_DIR = '/home/cameron/tells/logs/marl/fire_fully_obs/checkpoint10000/results'
 #RESULTS_DIR = '/home/cameron/tells/logs/marl/fire_fully_obs/checkpoint10000/results_pf'
-RESULTS_DIR = '/home/cameron/tells/logs/marl/fire_fully_obs/controller_results'
+RESULTS_DIR = '/home/cameron/tells/results/fire/results_allocentric'
 PLOT_SAVE_PATH = '/home/cameron/tells/test_fire.png'
 WORLD_STATE_SAVE_PATH = '/home/cameron/tells/test_fire_world_state.png'
 
@@ -427,6 +427,7 @@ def plot_episode_trajectory_overlay(
     save_path: str = PLOT_SAVE_PATH,
     window: int = WINDOW,
     offset: int = OFFSET,
+    legend: bool = True,
 ):
     '''
     render a single static high-resolution image of a window of a fire
@@ -475,7 +476,8 @@ def plot_episode_trajectory_overlay(
     ax.set_ylim(GRID_SIZE - 0.5, -0.5)
     ax.set_aspect('equal')
     ax.set_title(f'Fire Episode Ground Truth (steps {start_idx}-{start_idx + n_steps - 1})', fontweight='bold')
-    ax.legend(handles=legend_handles, loc='upper right', framealpha=0.9, prop={'weight': 'bold', 'size': 11})
+    if legend:
+        ax.legend(handles=legend_handles, loc='upper right', framealpha=0.9, prop={'weight': 'bold', 'size': 11})
 
     fig.tight_layout()
     fig.savefig(save_path, dpi=200)
@@ -490,6 +492,7 @@ def plot_world_state_overlay(
     save_path: str = WORLD_STATE_SAVE_PATH,
     window: int = WINDOW,
     offset: int = OFFSET,
+    legend: bool = True,
 ):
     '''
     render one figure with a large ground-truth overlay on the left, and
@@ -557,7 +560,8 @@ def plot_world_state_overlay(
     ax_left.set_title(
         f'Fire Episode Ground Truth (steps {start_idx}-{start_idx + n_steps - 1})', fontweight='bold', fontsize=14,
     )
-    ax_left.legend(handles=legend_handles, loc='upper right', framealpha=0.9, prop={'weight': 'bold', 'size': 11})
+    if legend:
+        ax_left.legend(handles=legend_handles, loc='upper right', framealpha=0.9, prop={'weight': 'bold', 'size': 11})
 
     full_step_axis = np.arange(full_fire_grids.shape[0])
     # the requested window can run past the episode's actual length (see
@@ -617,12 +621,15 @@ if __name__ == '__main__':
                          help='render the multi-panel ground-truth + per-drone estimated-world-state figure')
     parser.add_argument('--world-state-save-path', type=str, default=WORLD_STATE_SAVE_PATH,
                          help='where to save the multi-panel world-state figure')
+    parser.add_argument('--no-legend', action='store_false', dest='legend',
+                         help='omit the ground-truth legend (unburned/burning/burned/agent colors)')
     args = parser.parse_args()
 
     plot_episode_trajectory_overlay(
         episode=args.episode,
         window=args.window,
         offset=args.offset,
+        legend=args.legend,
     )
 
     if args.world_state:
@@ -631,4 +638,5 @@ if __name__ == '__main__':
             save_path=args.world_state_save_path,
             window=args.window,
             offset=args.offset,
+            legend=args.legend,
         )

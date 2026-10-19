@@ -628,7 +628,13 @@ class FootballParticleFilter(PredatorPreyParticleFilter):
         observed_pos: np.ndarray,
         action = None,
         measurement_std: float = None,
+        ball_obs: tuple = None,
     ):
+        '''
+        ball_obs: optional (true absolute ball position, true ball-owner
+        one-hot) pair - passed by PFWrapper on steps where the adversary is
+        observed, so the filter's ball estimate is corrected to the truth
+        '''
 
         if agent_name not in self.clusters:
             raise ValueError(f"Agent name '{agent_name}' not found in clusters.")
@@ -645,6 +651,16 @@ class FootballParticleFilter(PredatorPreyParticleFilter):
             self.ball_owner = np.zeros_like(self.ball_owner)
             self.ball_owner[int(agent_name[-1])] = 1
             if self.ball_passing:
+                self.ball_passing = False
+                self.pass_steps = None
+
+        if ball_obs is not None:
+            ball_pos, ball_owner = ball_obs
+            self.ball_position = deepcopy(ball_pos)
+            # only reset ownership when someone actually has the ball - while
+            # it's in flight, keep the current pass prediction moving it
+            if ball_owner.max() > 0:
+                self.ball_owner = deepcopy(ball_owner)
                 self.ball_passing = False
                 self.pass_steps = None
 

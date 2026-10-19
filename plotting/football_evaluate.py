@@ -27,6 +27,13 @@ COMBINED_SAVE_PATH = '/home/cameron/tells/test_football_combined_metrics.png'
 # steps filtered out the same way decomposed_reward_by_step does below
 CONTROLLER_MEAN_DECOMPOSED_REWARD = 1.161578
 
+# steps past this are dropped from every plot
+MAX_STEP = 200
+
+# steps reached by fewer episodes than this are dropped from every plot -
+# late steps only a handful of long episodes reach are too noisy to read
+MIN_SAMPLES = 20
+
 
 def list_episodes(results_dir: str):
     '''
@@ -219,10 +226,10 @@ def decomposed_reward_by_step(results_dir: str, episode: int) -> dict:
     return reward_by_step
 
 
-def average_over_episodes(per_episode_fn, results_dir: str, episodes) -> dict:
+def average_over_episodes(per_episode_fn, results_dir: str, episodes, max_step: int = None) -> dict:
     '''
     run per_episode_fn(results_dir, episode) over every episode and pool
-    the results by step
+    the results by step, dropping any step past max_step (if given)
 
     returns
     -------
@@ -232,6 +239,8 @@ def average_over_episodes(per_episode_fn, results_dir: str, episodes) -> dict:
     for episode in episodes:
         values_by_step = per_episode_fn(results_dir, episode)
         for step, value in values_by_step.items():
+            if max_step is not None and step > max_step:
+                continue
             combined.setdefault(step, []).append(value)
 
     return {step: np.array(values) for step, values in combined.items()}
@@ -243,7 +252,7 @@ def _draw_average_with_std(
     ylabel: str,
     reference_line: float = None,
     reference_label: str = None,
-    min_samples: int = 2,
+    min_samples: int = MIN_SAMPLES,
     show_legend: bool = True,
 ):
     '''
@@ -319,7 +328,7 @@ def plot_average_with_std(
     title: str,
     reference_line: float = None,
     reference_label: str = None,
-    min_samples: int = 2,
+    min_samples: int = MIN_SAMPLES,
 ):
     '''
     plot the per-step mean (+/- 1 stdev, pooled across episodes) for one or
@@ -395,7 +404,7 @@ def plot_combined_metrics(
     _draw_average_with_std(axes[1], estimate_variance, ylabel='Belief Variance', show_legend=False)
     _draw_average_with_std(
         axes[2], decomposed_reward, ylabel='Decomposed Reward',
-        reference_line=reference_line, reference_label=reference_label, min_samples=2, show_legend=False,
+        reference_line=reference_line, reference_label=reference_label, min_samples=MIN_SAMPLES, show_legend=False,
     )
 
     _set_endpoint_yticks(axes[0], y_min=0)
@@ -426,6 +435,8 @@ if __name__ == '__main__':
     parser.add_argument('--combined-save-path', type=str, default=COMBINED_SAVE_PATH,
                          help='where to save the combined (stacked) belief error / decomposed reward / '
                               'estimate variance plot')
+    parser.add_argument('--max-step', type=int, default=MAX_STEP,
+                         help='drop steps past this from every plot')
     args = parser.parse_args()
 
     result_dirs = {'Allocentric': args.results, 'PF': args.results_pf}
@@ -439,9 +450,11 @@ if __name__ == '__main__':
         episodes = list_episodes(results_dir)
         episode_counts[label] = len(episodes)
 
-        belief_error[label] = average_over_episodes(belief_error_by_step, results_dir, episodes)
-        decomposed_reward[label] = average_over_episodes(decomposed_reward_by_step, results_dir, episodes)
-        estimate_variance[label] = average_over_episodes(agent_estimate_variance_by_step, results_dir, episodes)
+        belief_error[label] = average_over_episodes(belief_error_by_step, results_dir, episodes, args.max_step)
+        decomposed_reward[label] = average_over_episodes(decomposed_reward_by_step, results_dir, episodes, args.max_step)
+        estimate_variance[label] = average_over_episodes(
+            agent_estimate_variance_by_step, results_dir, episodes, args.max_step
+        )
 
     run_counts = ', '.join(f'{label}: {n}' for label, n in episode_counts.items())
 
@@ -459,7 +472,7 @@ if __name__ == '__main__':
         title='Average Decomposed Reward over Episode Steps',
         reference_line=CONTROLLER_MEAN_DECOMPOSED_REWARD,
         reference_label='controller mean',
-        min_samples=2,
+        min_samples=MIN_SAMPLES,
     )
 
     plot_average_with_std(

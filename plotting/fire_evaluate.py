@@ -256,6 +256,7 @@ def _draw_average_with_std(
     min_samples: int = 2,
     show_legend: bool = True,
     max_step: int = 125,
+    clamp_min: float = None,
 ):
     '''
     draw the per-step mean (+/- 1 stdev, pooled across episodes) for one or
@@ -288,6 +289,10 @@ def _draw_average_with_std(
         drop steps beyond this value so plots cut off at a fixed horizon
         instead of trailing off into the long tail of a few surviving
         episodes
+    clamp_min:float
+        if given, floor the lower edge of the shaded stdev band at this
+        value (e.g. 0 for a metric like variance that can never go
+        negative) instead of letting mean - stdev dip below it
     '''
     for label, values_by_step in series.items():
         steps = sorted(s for s in values_by_step if len(values_by_step[s]) >= min_samples and s <= max_step)
@@ -299,7 +304,8 @@ def _draw_average_with_std(
 
         line = sns.lineplot(x=steps, y=means, ax=ax, label=f'{label} mean', legend=False)
         color = line.get_lines()[-1].get_color()
-        ax.fill_between(steps, means - stds, means + stds, alpha=0.2, color=color, label=f'{label} +/- 1 stdev')
+        lower = means - stds if clamp_min is None else np.maximum(means - stds, clamp_min)
+        ax.fill_between(steps, lower, means + stds, alpha=0.2, color=color, label=f'{label} +/- 1 stdev')
 
     if reference_line is not None:
         ax.axhline(reference_line, color='black', linestyle=':', label=reference_label)
@@ -336,6 +342,7 @@ def plot_average_with_std(
     reference_label: str = None,
     min_samples: int = 2,
     max_step: int =125,
+    clamp_min: float = None,
 ):
     '''
     plot the per-step mean (+/- 1 stdev, pooled across episodes) for one or
@@ -366,11 +373,17 @@ def plot_average_with_std(
         drop steps beyond this value so the plot cuts off at a fixed
         horizon instead of trailing off into the long tail of a few
         surviving episodes
+    clamp_min:float
+        if given, floor the lower edge of the shaded stdev band at this
+        value (e.g. 0 for a metric like variance that can never go
+        negative) instead of letting mean - stdev dip below it
     '''
     sns.set_theme(style='darkgrid')
     fig, ax = plt.subplots(figsize=(10, 4))
 
-    _draw_average_with_std(ax, series, ylabel, reference_line, reference_label, min_samples, max_step=max_step)
+    _draw_average_with_std(
+        ax, series, ylabel, reference_line, reference_label, min_samples, max_step=max_step, clamp_min=clamp_min,
+    )
 
     ax.set_xlabel('step')
     ax.set_title(title, fontweight='bold')
@@ -417,7 +430,9 @@ def plot_combined_metrics(
     fig, axes = plt.subplots(3, 1, figsize=(10, 7), sharex=True)
 
     _draw_average_with_std(axes[0], belief_error, ylabel='Belief Error', show_legend=False, max_step=max_step)
-    _draw_average_with_std(axes[1], estimate_variance, ylabel='Belief Variance', show_legend=False, max_step=max_step)
+    _draw_average_with_std(
+        axes[1], estimate_variance, ylabel='Belief Variance', show_legend=False, max_step=max_step, clamp_min=0,
+    )
     _draw_average_with_std(
         axes[2], decomposed_reward, ylabel='Decomposed Reward',
         reference_line=reference_line, reference_label=reference_label, min_samples=2, show_legend=False,
@@ -510,6 +525,7 @@ if __name__ == '__main__':
         save_path=args.estimate_variance_save_path,
         ylabel=f'cross-observer estimate variance ({run_counts})',
         title='Average Cross-Observer Estimate Variance over Episode Steps',
+        clamp_min=0,
     )
 
     plot_combined_metrics(

@@ -45,18 +45,24 @@ env:
     team: 0.0
     target: 0.0
   env_kwargs:
-    warm_up_steps: 25
+    warm_up_steps: 22
+    noise: False
+    move_speed: 2
+    extinguish_radius: 9
   reward_kwargs:
     extinguish_scale: 0.01
-    green_scale: -1
-    red_scale: 1.0
+    green_scale: -5
+    red_scale: 5.0
     lose_penalty: -500
     extinguish_reward: 500
     bc_scale: 0.5
-    proximity_penalty: 5.0
-    belief_dev_scale: 1.0
+    proximity_penalty: 0.5
   controller_kwargs:
     deadzone: 0.1
+    extinguish_radius: 2
+  fire_controller_kwargs:
+    spread_prob: 0.05
+    away_bias: 1.0
 
 
 sim:

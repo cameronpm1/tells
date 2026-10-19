@@ -38,6 +38,7 @@ from controllers.drone_control import drone_controller
 from controllers.fire_control import extinguish_controller
 from controllers.football_control import compute_rondo_actions
 from controllers.predator_prey_control import compute_slot_actions
+from controllers.predator_prey_swarm_control import compute_slot_actions as compute_swarm_slot_actions
 from learn.marl.callbacks import CurriculumCallback, LogRawEpisodeReturn
 
 from evals.belief.eval import load_model
@@ -175,7 +176,9 @@ def _collect_controller_dataset(cfg: dict, episodes: int):
         for i in range(cfg['env']['max_episode_length']):
 
 
-            if 'predator_prey' in cfg['env']['scenario']:
+            if 'predator_prey_swarm' in cfg['env']['scenario']:
+                expert_actions = compute_swarm_slot_actions(obs,env.unwrapped.obs_map)
+            elif 'predator_prey' in cfg['env']['scenario']:
                 expert_actions = compute_slot_actions(obs,env.unwrapped.obs_map)
             elif 'drone' in cfg['env']['scenario']:
                 expert_actions = drone_controller(obs, env.unwrapped.obs_map, cfg['env'].get('controller_kwargs', {}))

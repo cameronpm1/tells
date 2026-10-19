@@ -3,21 +3,21 @@ seed: 2
 if_cuda: True
 gamma: 0.5
 log_dir: 'logs/belief/'
-label: 'short'
+label: '5k'
 train_batch: 256
 val_batch: 256
 test_batch: 256
 num_workers: 15
 num_gpus: 1
 model_name: 'fire_NN'
-input_channels: 59548
+input_channels: 29780 #119092 #
 output_channels: 12
 window_size: 61
 num_frames: 4
-num_classes: 4
+dnum_classes: 2
 data_dir: 'data/'
-data_name: 'fire_fully_obs_e'
-lr_schedule: [200, 500, 1000, 2000, 3000]
-epochs: 1500
+data_name: 'fire_fully_obs'
+lr_schedule: []
+epochs: 200
 
 #everythin rel to adversary

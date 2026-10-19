@@ -44,7 +44,7 @@ class PredatorPreyEnv(gymnasium.Env):
         self.local_observations = local_observations
         self.env.unwrapped.local_observations = local_observations
         self.reward_cfg = reward_kwargs
-        self.controller_cfg = controller_kwargs
+        self.controller_cfg = deepcopy(controller_kwargs)
 
         self.obs = None
         self.ts = 0
@@ -63,6 +63,8 @@ class PredatorPreyEnv(gymnasium.Env):
         }
         self.goal_rel = True
 
+        self.original_gain = self.controller_cfg['prey_avoid_gain']
+
     def _observation_space(self, agent):
         return self.env.observation_space(agent)
 
@@ -74,6 +76,8 @@ class PredatorPreyEnv(gymnasium.Env):
         action_dict: dict
     ):
         self.ts += 1
+
+        #action_dict = compute_slot_actions(deepcopy(self.obs), self.obs_map)
 
         filtered_actions = {}
         for agent_id, action in action_dict.items():
@@ -533,7 +537,7 @@ class PredatorPreyScenario(BaseScenario):
                 agent.silent = True
                 agent.size = 0.05
                 agent.accel = 3.0
-                agent.max_speed = self.base_speed*self.speed_ratio
+                agent.max_speed = self.base_speed * self.speed_ratio #0.5
                 agent.color = np.array([0.85,0.35,0.35])
             world.agents.append(agent)
 

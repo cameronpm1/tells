@@ -18,12 +18,14 @@ import predator_prey_evaluate
 # terminates early (agents caught the prey) before its 400-step cap, while
 # football/drones only reach their 300/125-step caps by avoiding the early
 # failure terminations (defender steal/oob for football, breach/oob for
-# drones) - fire has no user-specified success rule, so it's left out
+# drones) - fire's episodes terminate early (fire fully extinguished or
+# contained) before its 125-step cap (max_episode_length in confs/fire/*.yaml),
+# so a successful fire episode is one that doesn't run out the clock
 SUCCESS_RULES = {
     'predator_prey': ('episode ends before 400 steps', lambda length: length < 400),
     'football': ('episode reaches >= 300 steps', lambda length: length >= 300),
     'drones': ('episode reaches >= 125 steps', lambda length: length >= 125),
-    'fire': (None, None),
+    'fire': ('episode ends before 125 steps', lambda length: length < 125),
 }
 
 

@@ -1,3 +1,12 @@
+# similarity to fully-observable: overall mean nearest-baseline distance in raw
+# obs space (report_nn_to_baseline, lower = closer), all episodes,
+# --n-neighbors 15 --min-dist 0.1 (logs in logs/umap_runs/)
+#   drones        (results/drones, 30-d):        allocentric 1.0644  pf 2.0723
+#   football      (results/football, 26-d):      allocentric 0.1603  pf 1.0094
+#   predator_prey (predator_prey_fully_obs/checkpoint1000, 15-d): allocentric 1.9783  pf 2.3129
+#   fire          (results/fire, umap_fire.py: checkpoint5000 policy conv features, 128-d, not raw pixels):
+#                                                allocentric 1.5259  pf 1.6057
+
 import argparse
 import glob
 import os
@@ -24,7 +33,7 @@ DEFAULT_SAVE_PATH = '/home/cameron/tells/test_umap.png'
 
 # subdirectories looked for under the given checkpoint directory
 SOURCE_DIRNAMES = {
-    'true': 'results',
+    'true': 'results_fully_obs',
     'allocentric': 'results_allocentric',
     'pf': 'results_pf',
 }

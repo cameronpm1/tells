@@ -7,8 +7,11 @@ from copy import deepcopy
 from typing import Optional
 from gymnasium import spaces
 import matplotlib.pyplot as plt
+from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.patches import Circle, PathPatch
+from matplotlib.path import Path
 
-matplotlib.use("Agg")  
+matplotlib.use("Agg")
 
 from controllers.fire_control import probabilistic_fire_controller, extinguish_controller, nearest_cell_dist, inward_band_cost
 
@@ -386,14 +389,37 @@ class DroneFireEnv(gymnasium.Env):
         return error
 
     def render_rgb(self):
-        frame = self.env.image().copy()
-        blue = np.array([0, 0, 255], dtype=np.uint8)
+        '''
+        render the current fire grid + drone positions in the same visual
+        style as overlay_plot_fire.py's ground-truth panel (DRONE_COLORS
+        drone icons, forest-green/burning-red/burned-black grid with cell
+        gridlines via _draw_fire_grid/_draw_drone_icon) instead of the
+        plain COLORS pixel dump + blue-plus markers this used to draw, so
+        eval gifs/videos read the same way as the static overlay plots
 
-        for drone in self.agents:
-            r, c = self.env.drone_states[drone]
-            for rr, cc in [(r, c), (r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]:
-                if 0 <= rr < frame.shape[0] and 0 <= cc < frame.shape[1]:
-                    frame[rr, cc] = blue
+        drones are colored in sorted-name order (matching
+        overlay_plot_fire.load_episode_positions' `sorted(...)` agent
+        ordering) rather than self.agents' insertion order, so a given
+        drone always gets the same DRONE_COLORS entry here as it does in
+        the overlay plots
+        '''
+        fig, ax = plt.subplots(figsize=(6, 6), dpi=100)
+
+        _draw_fire_grid(ax, self.env.fire_state)
+
+        for idx, drone in enumerate(sorted(self.agents)):
+            row, col = self.env.drone_states[drone]
+            color = DRONE_COLORS[idx % len(DRONE_COLORS)]
+            _draw_drone_icon(ax, (col, row), color, zorder=4)
+
+        ax.set_xlim(-0.5, GRID_SIZE - 0.5)
+        ax.set_ylim(GRID_SIZE - 0.5, -0.5)
+        ax.set_aspect('equal')
+        fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+        fig.canvas.draw()
+        frame = np.asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
+        plt.close(fig)
 
         return frame
 
@@ -559,18 +585,6 @@ class DroneFireSim:
         max_extinguish_prob=1.0,
         decay_rate=0.05,
     ):
-        """
-        Extinguish nearby fire cells probabilistically.
-
-        Probability decreases with distance from the drone:
-            p = max_extinguish_prob * exp(-decay_rate * distance)
-
-        Cells changed:
-            RED -> BLACK with probability p
-            GREEN stays GREEN
-            BLACK stays BLACK
-        """
-
         pos = self.drone_states[drone]
         r, c = pos
 
@@ -639,6 +653,102 @@ class DroneFireSim:
         return self.COLORS[self.fire_state]
 
 
+DRONE_COLORS = ['#1f3fae', '#2f6fc9', '#4a93cf', '#6cb5d9']
+UNBURNED_COLOR = '#1e4d2e'
+BURNING_COLOR = '#a4231f'
+BURNED_COLOR = '#101010'
+GRID_LINE_COLOR = 'black'
+
+FIRE_CMAP = ListedColormap([UNBURNED_COLOR, BURNING_COLOR, BURNED_COLOR])
+FIRE_NORM = BoundaryNorm([-0.5, 0.5, 1.5, 2.5], FIRE_CMAP.N)
+
+def _draw_fire_grid(ax, grid, cell_size: float = 1.0):
+
+    extent = (-0.5, GRID_SIZE - 0.5, GRID_SIZE - 0.5, -0.5)
+    ax.imshow(grid, cmap=FIRE_CMAP, norm=FIRE_NORM, interpolation='nearest', extent=extent, zorder=1)
+
+    ax.set_xticks(np.arange(-0.5, GRID_SIZE, cell_size), minor=True)
+    ax.set_yticks(np.arange(-0.5, GRID_SIZE, cell_size), minor=True)
+    ax.grid(which='minor', color=GRID_LINE_COLOR, linewidth=0.32, alpha=0.5, zorder=2)
+    ax.tick_params(which='minor', length=0)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+
+def _rounded_x_path(center, half_width: float, arm_length: float, corner_radius: float):
+
+    half_width = min(half_width, arm_length * 0.9)
+    corner_radius = min(corner_radius, half_width * 0.95, (arm_length - half_width) * 0.95)
+
+    raw_points = [
+        (half_width, arm_length), (half_width, half_width), (arm_length, half_width),
+        (arm_length, -half_width), (half_width, -half_width), (half_width, -arm_length),
+        (-half_width, -arm_length), (-half_width, -half_width), (-arm_length, -half_width),
+        (-arm_length, half_width), (-half_width, half_width), (-half_width, arm_length),
+    ]
+    concave_idxs = {1, 4, 7, 10}
+
+    theta = np.radians(45)
+    c, s = np.cos(theta), np.sin(theta)
+    rotation = np.array([[c, -s], [s, c]])
+    points = [rotation @ np.array(p) for p in raw_points]
+
+    n = len(points)
+    verts = []
+    codes = []
+
+    for i, p in enumerate(points):
+        if i in concave_idxs:
+            dir_in = points[i - 1] - p
+            dir_in /= np.linalg.norm(dir_in)
+            dir_out = points[(i + 1) % n] - p
+            dir_out /= np.linalg.norm(dir_out)
+
+            entry = p + dir_in * corner_radius
+            exit_ = p + dir_out * corner_radius
+
+            codes.append(Path.MOVETO if not codes else Path.LINETO)
+            verts.append(entry)
+            codes.append(Path.CURVE3)
+            verts.append(p)
+            codes.append(Path.CURVE3)
+            verts.append(exit_)
+        else:
+            codes.append(Path.MOVETO if not codes else Path.LINETO)
+            verts.append(p)
+
+    verts.append(verts[0])
+    codes.append(Path.CLOSEPOLY)
+
+    verts = np.array(verts) + np.asarray(center)
+    return Path(verts, codes)
+
+
+def _draw_drone_icon(ax, center, color, size: float = 1.1, alpha: float = 1.0, zorder: float = 4,
+                      rotor_radius: float = 0.26, rotor_linewidth: float = 1.8):
+
+    body_reach = size * 0.36
+    body_half_width = size * 0.17
+    body_corner_radius = size * 0.3
+    arm_length = size * 0.55
+    arm_linewidth = max(size * 0.9, 1.0)
+
+    body_path = _rounded_x_path(center, body_half_width, body_reach, body_corner_radius)
+    ax.add_patch(PathPatch(body_path, facecolor=color, edgecolor='none', alpha=alpha, zorder=zorder))
+
+    cx, cy = center
+    for angle_deg in (45, 135, 225, 315):
+        angle = np.radians(angle_deg)
+        dx, dy = np.cos(angle), np.sin(angle)
+        start = (cx + dx * body_reach, cy + dy * body_reach)
+        tip = (cx + dx * arm_length, cy + dy * arm_length)
+
+        ax.plot([start[0], tip[0]], [start[1], tip[1]], color=color, linewidth=arm_linewidth,
+                 alpha=alpha, zorder=zorder, solid_capstyle='round')
+        ax.add_patch(Circle(tip, rotor_radius, facecolor='none', edgecolor=color,
+                             linewidth=rotor_linewidth, alpha=alpha, zorder=zorder + 0.1))
+
+
 def render_fire_with_drones(env, save_path="test.png"):
     img = env.image().copy()
 
@@ -653,39 +763,3 @@ def render_fire_with_drones(env, save_path="test.png"):
         img[r0:r1, c0:c1] = np.array([0, 0, 255], dtype=np.uint8)
 
     plt.imsave(save_path, img)
-
-
-if __name__ == "__main__":
-    env = DroneFireEnv(
-        drone_names=["drone_0", "drone_1", "drone_2"],
-        drone_start_area=[30, 30],
-        fire_controller=probabilistic_fire_controller,
-        drone_start_noise=5,
-        ignition_points=[[30, 30], [30, 35], [32, 38]],
-    )
-
-    # Optional one-step movement test
-    actions = {
-        "drone_0": 0,  # stay
-        "drone_1": 0,  # right
-        "drone_2": 0,  # down-right
-    }
-
-    for i in range(30):
-        env.step(actions)
-
-    render_fire_with_drones(env, "test1.png")
-
-    actions = {
-        "drone_0": 9,  # stay
-        "drone_1": 9,  # right
-        "drone_2": 9,  # down-right
-    }
-
-    env.step(actions)
-
-    render_fire_with_drones(env, "test2.png")
-
-    
-
-    print("Saved test.png")
